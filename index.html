@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.0</title>
+<title>零件拍照計數 V3.1</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -74,7 +74,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.0</h1>
+  <h1>零件拍照計數 V3.1</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -610,6 +610,17 @@ function hasEdits(){return S.overrides.size||S.manualParts.length||S.Umanual||S.
 function allowReprocess(){return !hasEdits()||confirm('重新辨識會清除本張人工修改及覆核狀態，已儲存的累計不變。確定繼續？');}
 async function fileId(file){const buf=await file.arrayBuffer();if(window.crypto&&crypto.subtle){try{return 'sha256:'+Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buf)),x=>x.toString(16).padStart(2,'0')).join('');}catch(e){}}
   let a=2166136261,b=5381;for(const v of new Uint8Array(buf)){a=Math.imul(a^v,16777619);b=Math.imul(b,33)^v;}return 'local:'+buf.byteLength+':'+(a>>>0).toString(16)+':'+(b>>>0).toString(16);}
+// 讀不到原始檔時的備援指紋：用縮小後的照片像素計算
+function pixelId(img){let a=2166136261,b=5381;const d=img.data,step=Math.max(4,(Math.floor(d.length/200000)>>2)<<2);
+  for(let i=0;i<d.length;i+=step){const v=d[i]^(d[i+1]<<8)^(d[i+2]<<16);a=Math.imul(a^v,16777619);b=Math.imul(b,33)^v;}
+  return 'px:'+img.width+'x'+img.height+':'+(a>>>0).toString(16)+':'+(b>>>0).toString(16);}
+// 選好照片就立刻把整個檔案讀進記憶體，只讀一次（有些 Android 手機不允許同一張照片被讀兩次）
+async function readBytes(f){
+  try{return await f.arrayBuffer();}catch(e1){
+    try{return await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error||e1);r.readAsArrayBuffer(f);});}
+    catch(e2){console.warn('無法先讀取照片，改用直接開啟',e2);return null;}
+  }
+}
 function setBusy(b){S.busy=b;['camInput','fileInput','partMode','resSel','thr','thrAuto','ignBorder','addBtn','reviewBtn','useCur','saveBtn'].forEach(id=>$(id).disabled=b);}
 
 /* ===== 主流程 ===== */
@@ -619,26 +630,32 @@ async function processFile(file){
   clearEdits();S.selected=null;hideSheet();$('truth').value='';
   try{
     setStatus('計算中…');await new Promise(r=>setTimeout(r,30));
-    const [imgData,id]=await Promise.all([decodeImage(file,S.maxDim),fileId(file)]);if(job!==S.job)return;
+    const imgData=await decodeImage(file,S.maxDim);if(job!==S.job)return;
+    let id=null;try{id=await fileId(file);}catch(e){console.warn('照片指紋改用像素計算',e);}   // 指紋只用來防重複累計，失敗也照常計數
+    if(!id)id=pixelId(imgData);if(job!==S.job)return;
     S.img={w:imgData.width,h:imgData.height,rgba:imgData.data};
     if(S.diff){S.diff.delete();S.diff=null;}
     const r=computeDiff(imgData);S.diff=r.diff;S.chroma=r.chroma;S.warm=r.warm;
     S.autoT=Math.min(200,Math.max(MIN_THRESHOLD,Math.round(r.otsu)));S.T=S.autoT;S.manualT=false;updateThrUI();
     S.photoId=id;S.accIndex=null;decideMode(S.T);segment(S.T);estimateUnit();classify();S.initialTotal=S.total;S.elapsed=(performance.now()-t0)/1000;computeView();
     $('resultCard').hidden=false;setBusy(false);render();setStatus('完成。'+(S.useMode==='pin'?'金色模式':'通用模式')+'，'+S.img.w+'×'+S.img.h+'，'+S.elapsed.toFixed(2)+' 秒（含讀圖）');
-  }catch(e){console.error(e);S.img=null;S.labels=null;S.photoId=null;setStatus('處理失敗：'+(e.message||e),true);}
+  }catch(e){console.error(e);S.img=null;S.labels=null;S.photoId=null;
+    setStatus('處理失敗：'+(e&&e.name==='NotReadableError'?'手機不允許讀取這張照片。請再選一次；如果還是不行，先存到相簿，再用「選照片」選。':(e.message||e)),true);}
   finally{if(job===S.job){setBusy(false);if(!S.img)$('useCur').disabled=true;}}
 }
 
-function onFilePicked(ev) {
-  const f = ev.target.files && ev.target.files[0];
-  ev.target.value = '';
-  if (!f) return;
-  if (S.busy) { toast('還在計算上一張，請稍等再選'); return; }
-  if(S.img&&hasEdits()&&!confirm('切換新照片會清除目前畫面人工修改，已儲存累計不變。確定繼續？'))return;
-  clearTimeout(thrTimer);S.file = f;
+async function onFilePicked(ev) {
+  const input = ev.target, f = input.files && input.files[0];
+  if (!f) { input.value = ''; return; }
+  if (S.busy) { input.value = ''; toast('還在計算上一張，請稍等再選'); return; }
+  if(S.img&&hasEdits()&&!confirm('切換新照片會清除目前畫面人工修改，已儲存累計不變。確定繼續？')){ input.value = ''; return; }
+  setStatus('讀取照片…');
+  const buf = await readBytes(f);          // 先讀進記憶體
+  input.value = '';                        // 讀完才清空，下次選同一張也能觸發
+  clearTimeout(thrTimer);
+  S.file = buf ? new Blob([buf], { type: f.type || 'image/jpeg' }) : f;   // 之後重新計算都用記憶體裡這份
   if (!S.cvReady) { S.pending = true; setStatus('照片已選好，OpenCV 載入完成後會自動開始計算…'); return; }
-  processFile(f);
+  processFile(S.file);
 }
 
 function rerunThreshold(){
