@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V5.0</title>
+<title>零件拍照計數 V3.3</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -65,7 +65,7 @@
   .sheet-inner { max-width: 760px; margin: 0 auto; }
   .sheet { max-height: 88vh; overflow-y: auto; }
   .pile-box { margin-top: 8px; }
-  .pile-box canvas { display: block; width: 100%; max-height: 40vh; object-fit: contain; border-radius: 8px; background: #e5e7eb; touch-action: manipulation; }
+  .pile-box canvas { display: block; width: 100%; max-height: 34vh; object-fit: contain; border-radius: 8px; background: #e5e7eb; touch-action: manipulation; }
   .sheet-title { font-weight: 700; }
   .stepper { display: flex; align-items: center; gap: 14px; margin: 10px 0 4px; font-size: 18px; }
   .stepper button { width: 54px; height: 48px; font-size: 26px; border-radius: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
@@ -77,7 +77,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V5.0</h1>
+  <h1>零件拍照計數 V3.3</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -90,23 +90,24 @@
       <label class="btn">🖼️ 選照片<input id="fileInput" type="file" accept="image/*" hidden></label>
     </div>
     <div class="field"><label for="partMode">辨識模式</label><select id="partMode"><option value="auto" selected>自動判斷（建議）</option><option value="pin">金色零件（用顏色）</option><option value="general">通用（銀色、其他顏色、底光板）</option></select></div>
-    <div class="muted">自動判斷：金色零件用顏色辨識，可降低部分陰影影響；銀色、其他顏色或用底光板時，改用亮度差異。</div>
+    <div class="muted">自動判斷：金色零件用顏色辨識，不受陰影影響；銀色、其他顏色或用底光板時，改用亮度差異。</div>
   </section>
 
   <section id="resultCard" class="card" hidden>
     <div id="totalBox" class="total"><span id="totalNum">0</span><small>PCS</small></div>
     <div id="badge" class="badge" hidden></div>
     <div id="summary" class="summary"></div>
-    <div id="info" class="muted"></div><div id="fitInfo" class="calc-out"></div><div class="btnrow"><button id="fitBtn" class="btn small">顯示個體候選線</button><button id="nextPile" class="btn small">下一個待覆核區</button></div>
-    <div class="calc-out"><b>V5 深度辨識</b><div id="deepSummary" class="muted"></div><div class="btnrow"><button id="deepAll" class="btn primary">重新辨識待覆核區</button></div><div class="muted">原圖局部邊緣、端點及兩種門檻交叉比對，不會自動覆寫計數。</div></div><div id="warn" class="warn" hidden></div>
+    <div id="info" class="muted"></div>
+    <div id="warn" class="warn" hidden></div>
     <div class="legend">
       <span><i class="sw g"></i>單顆</span><span><i class="sw o"></i>黏在一起（估計）</span>
       <span><i class="sw b"></i>手動修改</span><span><i class="sw x"></i>不計</span>
     </div>
     <div class="field" style="justify-content:space-between;margin:4px 0 0">
-      <span class="muted">點區塊修正；橘色為待覆核（青色線為個體候選），藍色為人工修正。</span>
+      <span class="muted">點區塊修正；橘色為待覆核（標「?」的優先），藍色為人工修正。</span>
       <button id="viewBtn" class="btn small">放大零件區</button>
     </div>
+    <div class="btnrow"><button id="nextPileBtn" class="btn primary" hidden>下一個待覆核區</button></div>
     <canvas id="view"></canvas>
     <div class="btnrow">
       <button id="rawBtn" class="btn small">顯示原圖</button>
@@ -182,14 +183,15 @@
     <div id="pileBox" class="pile-box" hidden>
       <canvas id="pileCv"></canvas>
       <div class="muted">放大圖：每根零件點一下做記號（再點一次取消），數完按下面的按鈕。</div>
-      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="pileClear" class="btn small">清除記號</button><button id="templateUse" class="btn small" hidden>採用模板候選數</button></div>
+      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="pileClear" class="btn small">清除記號</button></div>
     </div>
-    <div id="deepLocal" class="pile-box" hidden><div class="btnrow"><button id="deepOne" class="btn primary">深度辨識此區</button></div><div id="deepLocalText" class="muted"></div><div class="field"><select id="deepMethod" hidden><option value="edge">原圖平行邊／端點</option><option value="relaxed">寬鬆模板</option><option value="tight">嚴格模板</option><option value="raw">無標記原圖</option></select></div><canvas id="deepCanvas" hidden></canvas><button id="deepUse" class="btn small" hidden>採用候選</button></div><div class="btnrow">
+    <div class="btnrow">
       <button id="refBtn" class="btn">設為「一顆」的基準</button>
       <button id="zeroBtn" class="btn">不要算這塊</button>
     </div>
     <div class="btnrow">
       <button id="resetBlobBtn" class="btn">還原自動判斷</button>
+      <button id="sheetNextBtn" class="btn">下一堆 ›</button>
       <button id="closeSheetBtn" class="btn primary">完成</button>
     </div>
   </div>
@@ -209,7 +211,8 @@ const SINGLE_MAX = 1.5;     // 面積小於「一顆」的 1.5 倍 → 算 1 顆
 const NOISE_MAX = 0.4;      // 面積小於「一顆」的 0.4 倍 → 當成雜點不算
 const WARM_MIN = 0.35;      // 自動判斷：零件區域的暖色像素超過這個比例，就當成金色零件
 const COLOR_TOL_MIN = 45;   // 顏色容許差異的下限（超過就當成不是零件）
-// 不使用未經驗證的固定誤差百分比。
+const PILE_ERR_PIN = 0.05;  // 金色模式：一堆的面積估計誤差約 5%
+const PILE_ERR_GEN = 0.08;  // 通用模式：有陰影，誤差約 8%
 const ACC_KEY = 'partcount.acc.v1'; // 相容原版累計
 const TEST_KEY = 'partcount.tests.v2';
 
@@ -227,7 +230,7 @@ const S = {
   view: null, fullView: true,  // 畫面顯示範圍（預設放大到有零件的區域）
   acc: [], accIndex: null, total: 0,
   accSum: 0, accEst: 0, calcEst: 0,
-  mode:'auto', useMode:'pin', autoReason:'', showNums:true, refColor:null, colorTol:null, marks:[], marksFor:null, pileView:null,
+  mode:'auto', useMode:'pin', autoReason:'', showNums:true, refColor:null, colorTol:null, marks:[], marksFor:null, pileView:null, lastPile:null,
   chroma:null, warm:null, profile:null, manualParts:[], undo:[],
   addMode:false, raw:false, reviewed:false, busy:false, job:0, photoId:null,
   elapsed:0, initialTotal:0, calcUnreviewed:false, accUnreviewed:false, autoIssues:[], tests:[]
@@ -383,7 +386,7 @@ function segment(T) {
       if(area>=minArea() && !(S.ignoreBorder&&c.border)) geometry(c);   // 兩種模式都做形狀判斷
     }
   }finally{mats.forEach(m=>{try{m.delete()}catch(e){}})}
-  S.appliedT=T;S.marks=[];S.marksFor=null;S.selected=null; S.Umanual=false; hideSheet();
+  S.appliedT=T;S.selected=null;S.lastPile=null;S.marks=[];S.marksFor=null; S.Umanual=false; hideSheet();   // 換照片或重算時，逐堆順序和記號都重來
 }
 // 使用各區塊的旋轉外接矩形，避免斜放零件長寬失真。
 function geometry(c){
@@ -432,235 +435,8 @@ function lineEvidence(c){
     for(let i=0;i+3<a.length;i+=4){const dx=a[i+2]-a[i],dy=a[i+3]-a[i+1],len=Math.hypot(dx,dy);if(len<.60*L||len>1.4*L)continue;all.push({len,ux:dx/len,uy:dy/len,x:(a[i]+a[i+2])/2,y:(a[i+1]+a[i+3])/2});}
     const kept=[];all.sort((a,b)=>b.len-a.len);
     for(const q of all){if(kept.some(k=>{const dx=q.x-k.x,dy=q.y-k.y;return Math.abs(q.ux*k.ux+q.uy*k.uy)>Math.cos(13*Math.PI/180)&&Math.abs(k.ux*dy-k.uy*dx)<.75*W&&Math.abs(k.ux*dx+k.uy*dy)<.65*L;}))continue;kept.push(q);}
-    c.lineKey=key;c.lineSeeds=all.map(q=>({...q,x:q.x-2,y:q.y-2}));c.lineCount=kept.length;return c.lineCount;
-  }catch(e){console.warn('直線比對不可用',e);c.lineKey=key;c.lineSeeds=[];c.lineCount=null;return null;}finally{mats.forEach(m=>m.delete());}
-}
-
-// V4: geometric, rotation-aware template fitting (not an AI model).
-// mask is a single connected component, local coordinates; seeds from Hough.
-function fitPinInstances(mask,w,h,L,W,seeds=[]){
-  const result={parts:[],coverage:0,ambiguous:false,limited:false,endpointPairs:0};
-  if(!Number.isFinite(L)||!Number.isFinite(W)||L/W<3||W<2||w*h>500000){result.limited=true;return result;}
-  let area=0;for(const v of mask)if(v)area++;
-  if(!area)return result;
-  const at=(x,y)=>{x=Math.round(x);y=Math.round(y);return x>=0&&y>=0&&x<w&&y<h&&mask[y*w+x]?1:0;};
-  const deg=Math.PI/180, step=Math.max(1,Math.round(W*.40));
-  const angles=Array.from({length:18},(_,i)=>[Math.cos(i*10*deg),Math.sin(i*10*deg)]);
-  const candidates=[];let evaluations=0;const maxEval=180000;
-  // Endpoint evidence: exposed tips with inward support and no continuation.
-  // Candidate tips are sampled along the mask; paired only at a plausible length.
-  const tips=[];const tipKeys=new Set();
-  function addTip(x,y,ux,uy){const key=Math.round(x/Math.max(1,W*.6))+','+Math.round(y/Math.max(1,W*.6))+','+Math.round(Math.atan2(uy,ux)/(.35));if(!tipKeys.has(key)){tipKeys.add(key);tips.push({x,y,ux,uy});}}
-  function evaluate(x,y,ux,uy,len,source){
-    if(++evaluations>maxEval){result.limited=true;return;}
-    if(!at(x,y))return;
-    const nx=-uy,ny=ux;let center=0,inside=0,out=0;
-    for(let i=0;i<13;i++){
-      const t=(i/12-.5)*len*.91,px=x+t*ux,py=y+t*uy;
-      center+=at(px,py);inside+=at(px+nx*W*.27,py+ny*W*.27)+at(px-nx*W*.27,py-ny*W*.27);
-      out+=at(px+nx*W*.86,py+ny*W*.86)+at(px-nx*W*.86,py-ny*W*.86);
-    }
-    if(center<11||inside<19)return;
-    let ends=0;
-    for(const s of [-1,1]){
-      const ex=x+s*ux*len*.46,ey=y+s*uy*len*.46;
-      const outside=at(x+s*ux*(len*.5+W*.65),y+s*uy*(len*.5+W*.65));
-      if(at(ex,ey)&&!outside){ends++;if(source==='scan')addTip(ex,ey,-s*ux,-s*uy);}
-    }
-    const score=.48*center/13+.34*inside/26+.12*(1-out/26)+.06*ends/2;
-    if(score<.74)return;
-    candidates.push({x,y,ux,uy,len,score,ends,source});
-  }
-  // Hough proposals: use segment centers and a small offset search.
-  for(const s of seeds.slice(0,150)){
-    if(!s.len||s.len<.45*L)continue;
-    for(const shift of [-.20,0,.20])for(const cross of [-.3,0,.3])
-      evaluate(s.x+s.ux*L*shift-s.uy*W*cross,s.y+s.uy*L*shift+s.ux*W*cross,s.ux,s.uy,L,'line');
-  }
-  // Rotate the calibrated geometric template across foreground only.
-  // Keep compute bounded; oversized piles remain explicitly uncertain.
-  scan:for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){if(!at(x,y))continue;
-    for(const [ux,uy] of angles){evaluate(x,y,ux,uy,L,'scan');if(result.limited)break scan;}
-  }
-  // Independently pair exposed tip hypotheses with opposite inward directions.
-  const tlist=tips.slice(0,550);if(tips.length>550)result.limited=true;
-  for(let i=0;i<tlist.length;i++)for(let j=i+1;j<tlist.length;j++){
-    const a=tlist[i],b=tlist[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
-    if(d<.80*L||d>1.07*L)continue;
-    const ux=dx/d,uy=dy/d;
-    if(a.ux*ux+a.uy*uy<.90||b.ux*ux+b.uy*uy>-.90)continue;
-    if(result.limited)break;
-    result.endpointPairs++;evaluate((a.x+b.x)/2,(a.y+b.y)/2,ux,uy,L,'tips');
-  }
-  candidates.sort((a,b)=>b.score-a.score||b.ends-a.ends);
-  // First suppress essentially identical poses; crossing instances are not suppressed.
-  const distinct=[];
-  const same=(a,b)=>{const dx=a.x-b.x,dy=a.y-b.y;return Math.abs(a.ux*b.ux+a.uy*b.uy)>.965&&Math.abs(a.ux*dy-a.uy*dx)<W*.65&&Math.abs(a.ux*dx+a.uy*dy)<L*.48;};
-  for(const c of candidates){if(!distinct.some(q=>same(c,q)))distinct.push(c);if(distinct.length>=500){result.limited=true;break;}}
-  // Score unique foreground coverage. A new pin must explain additional pixels,
-  // not simply be another line through an already explained object.
-  const covered=new Uint8Array(w*h);
-  function pixels(c){const ids=[],half=c.len*.5,rad=W*.57;
-    const rx=Math.abs(c.ux)*half+Math.abs(c.uy)*rad,ry=Math.abs(c.uy)*half+Math.abs(c.ux)*rad;
-    for(let y=Math.max(0,Math.floor(c.y-ry));y<=Math.min(h-1,Math.ceil(c.y+ry));y++)for(let x=Math.max(0,Math.floor(c.x-rx));x<=Math.min(w-1,Math.ceil(c.x+rx));x++){
-      const p=y*w+x;if(!mask[p])continue;const dx=x-c.x,dy=y-c.y;
-      if(Math.abs(dx*c.ux+dy*c.uy)<=half&&Math.abs(-dx*c.uy+dy*c.ux)<=rad)ids.push(p);
-    }return ids;
-  }
-  for(const c of distinct)c.ids=pixels(c);
-  let used=0;const maxParts=Math.min(100,Math.ceil(area/(L*W*.28))+2);
-  while(result.parts.length<maxParts){let best=null,bestGain=0;
-    for(const c of distinct){if(c.used||result.parts.some(q=>same(c,q)))continue;
-      let fresh=0;for(const p of c.ids)if(!covered[p])fresh++;
-      if(fresh<Math.max(L*W*.20,c.ids.length*.29)||c.ids.length<L*W*.40)continue;
-      const gain=fresh*(.7+.3*c.score)*(1+.06*c.ends);
-      if(gain>bestGain){best=c;bestGain=gain;}
-    }
-    if(!best)break;best.used=true;for(const p of best.ids)if(!covered[p]){covered[p]=1;used++;}
-    const {x,y,ux,uy,len,score,ends,source}=best;result.parts.push({x,y,ux,uy,len,score,ends,source});
-    if(used/area>=.96)break;
-  }
-  result.coverage=used/area;
-  result.ambiguous=result.limited||result.coverage<.83||result.parts.some(c=>c.ends===0||c.score<.82);
-  return result;
-}
-
-
-function fitCluster(c){
-  const p=S.profile;if(!p||p.L/p.W<3)return null;
-  const key=[p.L,p.W,S.appliedT].join('/');if(c.fitKey===key)return c.fitCache;
-  c.fitKey=key; c.fitCache=null;
-  if(c.w*c.h>500000||c.area>100*S.U)return null;
-  const mask=new Uint8Array(c.w*c.h);
-  for(let y=0;y<c.h;y++)for(let x=0;x<c.w;x++)mask[y*c.w+x]=S.labels[(c.y+y)*S.img.w+c.x+x]===c.id?1:0;
-  try{return c.fitCache=fitPinInstances(mask,c.w,c.h,p.L,p.W,c.lineSeeds||[]);}catch(e){console.warn('個體模板搜尋失敗',e);return null;}
-}
-
-/* ===== V5: original-photo local re-analysis =====
-   Three proposals: raw paired edges, relaxed mask fit, strict mask fit.
-   All remain candidates, not independent statistical confidence estimates. */
-function deepKey(){return [S.photoId,S.appliedT,S.useMode,S.profile?.L,S.profile?.W,S.ignoreBorder].join('/');}
-function validDeep(c){return c&&c.deep&&c.deep.key===deepKey()?c.deep:null;}
-function deepTargets(){return S.comps.slice(1).filter(c=>c.cls==='cluster');}
-function openOriginal(file){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(url);resolve(im)};im.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('無法讀取原始照片'))};im.src=url;});}
-function edgeInstances(edges,lines,maskA,maskB,w,h,L,W){
-  // Build poses from raw-image parallel boundaries and opposite transverse end edges.
-  const at=(a,x,y)=>{x=Math.round(x);y=Math.round(y);return x>=0&&y>=0&&x<w&&y<h&&a[y*w+x]?1:0;};
-  const near=(x,y)=>{const r=Math.max(1,Math.min(3,Math.round(W*.18)));for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++)if(at(edges,x+i,y+j))return 1;return 0;};
-  const seg=lines.map(a=>{const dx=a[2]-a[0],dy=a[3]-a[1],len=Math.hypot(dx,dy);return {x:(a[0]+a[2])/2,y:(a[1]+a[3])/2,ux:dx/Math.max(1,len),uy:dy/Math.max(1,len),len};});
-  const longs=seg.filter(s=>s.len>=.36*L&&s.len<=1.65*L).sort((a,b)=>b.len-a.len).slice(0,160);
-  const caps=seg.filter(s=>s.len>=.48*W&&s.len<=1.8*W).slice(0,180);
-  const candidates=[];let tested=0;
-  function evaluate(x,y,ux,uy,source){
-    if(++tested>25000)return;
-    let core=0,strict=0,left=0,right=0,ends=0,clear=0;
-    const nx=-uy,ny=ux;
-    for(let k=0;k<15;k++){
-      const t=(k/14-.5)*L*.88,px=x+t*ux,py=y+t*uy;
-      core+=at(maskA,px,py);strict+=at(maskB,px,py);
-      left+=near(px+nx*W*.48,py+ny*W*.48);right+=near(px-nx*W*.48,py-ny*W*.48);
-      clear+=2-at(maskA,px+nx*W*.9,py+ny*W*.9)-at(maskA,px-nx*W*.9,py-ny*W*.9);
-    }
-    for(const sign of [-1,1]){let cap=0;for(const d of [-.3,0,.3])cap+=near(x+sign*ux*L*.48+nx*W*d,y+sign*uy*L*.48+ny*W*d);if(cap>=2&&!at(maskA,x+sign*ux*(L*.5+.45*W),y+sign*uy*(L*.5+.45*W)))ends++;}
-    if(core<12||strict<8||Math.min(left,right)<5||left+right<15)return;
-    const score=.34*core/15+.14*strict/15+.32*(left+right)/30+.12*ends/2+.08*clear/30;
-    if(score<.65)return;
-    candidates.push({x,y,ux,uy,len:L,score,ends,source});
-  }
-  for(let i=0;i<longs.length;i++)for(let j=i+1;j<longs.length;j++){
-    const a=longs[i],b=longs[j],dot=a.ux*b.ux+a.uy*b.uy;if(Math.abs(dot)<.98)continue;
-    const dx=b.x-a.x,dy=b.y-a.y,perp=Math.abs(a.ux*dy-a.uy*dx),along=a.ux*dx+a.uy*dy;
-    if(perp<.52*W||perp>1.48*W||Math.abs(along)>(a.len+b.len)*.5-.25*L)continue;
-    const ux=a.ux,uy=a.uy,x=(a.x+b.x)/2,y=(a.y+b.y)/2;
-    for(const d of [-.18,0,.18])evaluate(x+ux*L*d,y+uy*L*d,ux,uy,'parallel');
-  }
-  for(let i=0;i<caps.length;i++)for(let j=i+1;j<caps.length;j++){
-    const a=caps[i],b=caps[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);if(d<.83*L||d>1.15*L)continue;
-    const ux=dx/d,uy=dy/d;if(Math.abs(a.ux*ux+a.uy*uy)>.3||Math.abs(b.ux*ux+b.uy*uy)>.3)continue;
-    evaluate((a.x+b.x)/2,(a.y+b.y)/2,ux,uy,'endpoints');
-  }
-  candidates.sort((a,b)=>b.score-a.score||b.ends-a.ends);
-  const same=(a,b)=>{const dx=b.x-a.x,dy=b.y-a.y;return Math.abs(a.ux*b.ux+a.uy*b.uy)>.96&&Math.abs(a.ux*dy-a.uy*dx)<.62*W&&Math.abs(a.ux*dx+a.uy*dy)<.48*L;};
-  const kept=[],covered=new Uint8Array(w*h);let used=0,area=0;for(const v of maskA)if(v)area++;
-  for(const c of candidates.slice(0,1800)){
-    if(kept.some(p=>same(p,c)))continue;
-    const ids=[],rx=Math.abs(c.ux)*L/2+Math.abs(c.uy)*W*.55,ry=Math.abs(c.uy)*L/2+Math.abs(c.ux)*W*.55;
-    for(let y=Math.max(0,Math.floor(c.y-ry));y<=Math.min(h-1,Math.ceil(c.y+ry));y++)for(let x=Math.max(0,Math.floor(c.x-rx));x<=Math.min(w-1,Math.ceil(c.x+rx));x++){
-      const q=y*w+x;if(!maskA[q])continue;const dx=x-c.x,dy=y-c.y;if(Math.abs(dx*c.ux+dy*c.uy)<=L/2&&Math.abs(-dx*c.uy+dy*c.ux)<=W*.55)ids.push(q);
-    }
-    let fresh=0;for(const q of ids)if(!covered[q])fresh++;
-    if(fresh<Math.max(.19*L*W,.30*ids.length)||ids.length<.45*L*W)continue;
-    kept.push(c);for(const q of ids)if(!covered[q]){covered[q]=1;used++;}if(kept.length>=100)break;
-  }
-  return {parts:kept,coverage:area?used/area:0,limited:tested>25000||kept.length>=100};
-}
-// Count agreement alone is not enough: require one-to-one spatial pose matching.
-function matchPoses(a,b,L,W){
-  const pairs=[];for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
-    const p=a[i],q=b[j],dx=q.x-p.x,dy=q.y-p.y,along=Math.abs(dx*p.ux+dy*p.uy),across=Math.abs(dx*p.uy-dy*p.ux),dot=Math.abs(p.ux*q.ux+p.uy*q.uy);
-    if(dot>=.94&&along<=.27*L&&across<=.80*W)pairs.push({i,j,d:along/L+across/W+1-dot});
-  }
-  pairs.sort((p,q)=>p.d-q.d);const x=new Set(),y=new Set();for(const p of pairs)if(!x.has(p.i)&&!y.has(p.j)){x.add(p.i);y.add(p.j);}return x.size;
-}
-function deepAnalyze(c,im){
-  const p=S.profile, sx=im.naturalWidth/S.img.w,sy=im.naturalHeight/S.img.h;
-  const pad=Math.ceil(Math.max(8,p.W*1.6));const x0=Math.max(0,c.x-pad),y0=Math.max(0,c.y-pad),x1=Math.min(S.img.w,c.x+c.w+pad),y1=Math.min(S.img.h,c.y+c.h+pad);
-  // Crop directly from original decoded image; never upscale low-res pixels for analysis.
-  const nw=(x1-x0)*sx,nh=(y1-y0)*sy,down=Math.min(1,1000/Math.max(nw,nh),Math.sqrt(380000/(nw*nh)));
-  const w=Math.max(1,Math.floor(nw*down)),h=Math.max(1,Math.floor(nh*down)),kx=w/(x1-x0),ky=h/(y1-y0),k=(kx+ky)/2,L=p.L*k,W=p.W*k;
-  if(W<2||L<12||c.area>100*S.U)return {key:deepKey(),error:'零件太小或區域太大，請靠近拍攝或分批。'};
-  const raw=document.createElement('canvas');raw.width=w;raw.height=h;const ctx=raw.getContext('2d',{willReadFrequently:true});ctx.drawImage(im,x0*sx,y0*sy,nw,nh,0,0,w,h);const rgba=ctx.getImageData(0,0,w,h);
-  const mats=[],M=m=>(mats.push(m),m);
-  try{
-    const own=M(new cv.Mat(h,w,cv.CV_8UC1)),other=new Uint8Array(w*h),bgR=[],bgG=[],bgB=[];
-    for(let y=0,i=0;y<h;y++)for(let x=0;x<w;x++,i++){
-      const px=Math.min(S.img.w-1,Math.floor(x0+(x+.5)/kx)),py=Math.min(S.img.h-1,Math.floor(y0+(y+.5)/ky)),id=S.labels[py*S.img.w+px];own.data[i]=id===c.id?255:0;other[i]=id!==0&&id!==c.id?1:0;
-      if(!id&&(x<.1*w||y<.1*h||x>.9*w||y>.9*h)&&i%5===0){bgR.push(rgba.data[i*4]);bgG.push(rgba.data[i*4+1]);bgB.push(rgba.data[i*4+2]);}
-    }
-    if(bgR.length<8)return {key:deepKey(),error:'局部背景不足，無法建立穩定二次門檻。'};
-    const br=median(bgR),bg=median(bgG),bb=median(bgB),radius=Math.max(1,Math.min(12,Math.round(.65*W))),ker=M(cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(2*radius+1,2*radius+1))),gate=M(new cv.Mat());cv.dilate(own,gate,ker);
-    const src=M(cv.matFromImageData(rgba)),rgb=M(new cv.Mat()),blur=M(new cv.Mat()),gray=M(new cv.Mat()),edges=M(new cv.Mat());cv.cvtColor(src,rgb,cv.COLOR_RGBA2RGB);cv.GaussianBlur(rgb,blur,new cv.Size(3,3),0,0,cv.BORDER_DEFAULT);cv.cvtColor(blur,gray,cv.COLOR_RGB2GRAY);cv.Canny(gray,edges,22,65,3,false);
-    const d=blur.data,rel=M(new cv.Mat(h,w,cv.CV_8UC1)),strict=M(new cv.Mat(h,w,cv.CV_8UC1)),t=S.useMode==='pin'?Math.max(8,S.T*.4):S.T;
-    for(let i=0,j=0;i<w*h;i++,j+=3){const allowed=gate.data[i]&&!other[i],v=S.useMode==='pin'?(d[j]-d[j+2])-(br-bb):Math.max(Math.abs(d[j]-br),Math.abs(d[j+1]-bg),Math.abs(d[j+2]-bb));rel.data[i]=allowed&&v>=t*.76?255:0;strict.data[i]=allowed&&v>=t*1.16?255:0;if(!allowed)edges.data[i]=0;}
-    const morph=M(cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(3,3)));cv.morphologyEx(rel,rel,cv.MORPH_CLOSE,morph);cv.morphologyEx(strict,strict,cv.MORPH_CLOSE,morph);for(let i=0;i<w*h;i++)if(!gate.data[i]||other[i]){rel.data[i]=0;strict.data[i]=0;}
-    const lineMat=M(new cv.Mat());cv.HoughLinesP(edges,lineMat,1,Math.PI/180,Math.max(6,Math.round(.20*L)),Math.max(3,Math.round(.50*W)),Math.max(2,Math.round(.13*L)));
-    const a=lineMat.data32S,lines=[];for(let i=0;i+3<a.length;i+=4)lines.push([a[i],a[i+1],a[i+2],a[i+3]]);
-    // End caps are much shorter than long sides; use a separate low-vote Hough pass.
-    const capMat=M(new cv.Mat());cv.HoughLinesP(edges,capMat,1,Math.PI/180,Math.max(3,Math.round(.65*W)),Math.max(2,Math.round(.48*W)),1);const caps=capMat.data32S;for(let i=0;i+3<caps.length;i+=4){const len=Math.hypot(caps[i+2]-caps[i],caps[i+3]-caps[i+1]);if(len<=1.8*W)lines.push([caps[i],caps[i+1],caps[i+2],caps[i+3]]);}
-    const edge=edgeInstances(edges.data,lines,rel.data,strict.data,w,h,L,W);
-    // Seed two separate geometric searches with the raw-edge proposals, not the V4 connected component lines.
-    const relaxed=fitPinInstances(rel.data,w,h,L,W,edge.parts),tight=fitPinInstances(strict.data,w,h,L,W,edge.parts);
-    const m1=matchPoses(relaxed.parts,tight.parts,L,W),m2=matchPoses(relaxed.parts,edge.parts,L,W),n=relaxed.parts.length;
-    const agree=n>0&&n===tight.parts.length&&n===edge.parts.length&&m1===n&&m2===n&&!relaxed.limited&&!tight.limited&&!edge.limited&&relaxed.coverage>=.83&&tight.coverage>=.83&&edge.coverage>=.72;
-    const parts=agree?relaxed.parts:edge.parts.length&&edge.coverage>=.70?edge.parts:relaxed.parts;
-    return {key:deepKey(),raw,w,h,x0,y0,kx,ky,sourceW:im.naturalWidth,sourceH:im.naturalHeight,down,edge,relaxed,tight,parts,agree,m1,m2,base:c.count};
-  }finally{mats.forEach(m=>{try{m.delete()}catch(e){}});}
-}
-function deepText(d){if(!d)return '尚未二次辨識';if(d.error)return d.error;return '原圖局部 '+d.w+'×'+d.h+' px'+(d.down<.999?'（為手機效能已縮小）':'')+'；平行邊／端點 '+d.edge.parts.length+'；寬鬆模板 '+d.relaxed.parts.length+'；嚴格模板 '+d.tight.parts.length+'；位置吻合 '+d.m1+'/'+d.relaxed.parts.length+'、'+d.m2+'/'+d.relaxed.parts.length+'。'+(d.agree?'三法個體位置一致（仍須覆核）':'證據未一致，請核對各候選線與原圖。');}
-function drawDeep(){
-  const c=S.comps[S.selected],d=validDeep(c),box=$('deepLocal');box.hidden=!c||!(c.cls==='cluster'||d);if(box.hidden)return;
-  $('deepLocalText').textContent=deepText(d);$('deepOne').disabled=S.busy||!S.profile||S.profile.L/S.profile.W<3;
-  $('deepMethod').hidden=!d||!!d.error;$('deepUse').hidden=!d||!!d.error;$('deepCanvas').hidden=!d||!!d.error;if(!d||d.error)return;
-  const method=$('deepMethod').value,parts=method==='edge'?d.edge.parts:method==='tight'?d.tight.parts:method==='raw'?[]:d.relaxed.parts;
-  const cn=$('deepCanvas');cn.width=d.w;cn.height=d.h;const ctx=cn.getContext('2d');ctx.drawImage(d.raw,0,0);const fs=Math.max(9,Math.round(S.profile.W*(d.kx+d.ky)/2*.8));ctx.font='bold '+fs+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-  parts.forEach((p,i)=>{ctx.beginPath();ctx.moveTo(p.x-p.ux*p.len/2,p.y-p.uy*p.len/2);ctx.lineTo(p.x+p.ux*p.len/2,p.y+p.uy*p.len/2);ctx.lineWidth=Math.max(1.5,fs*.23);ctx.strokeStyle='#075985';ctx.stroke();for(const sign of [-1,1]){ctx.beginPath();ctx.arc(p.x+sign*p.ux*p.len/2,p.y+sign*p.uy*p.len/2,Math.max(2,fs*.25),0,Math.PI*2);ctx.fillStyle='#06b6d4';ctx.fill();}ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.strokeText(String(i+1),p.x,p.y);ctx.fillStyle='#075985';ctx.fillText(String(i+1),p.x,p.y);});
-  $('deepUse').textContent='採用此候選 '+parts.length+' PCS';$('deepUse').disabled=S.busy||!parts.length;
-}
-function deepSummary(){
-  const targets=deepTargets(),done=targets.filter(c=>validDeep(c)),ok=done.filter(c=>validDeep(c).agree),errors=done.filter(c=>validDeep(c).error),suggested=S.total+ok.reduce((s,c)=>s+validDeep(c).parts.length-c.count,0);
-  $('deepAll').disabled=S.busy||!targets.length||!S.profile||S.profile.L/S.profile.W<3;
-  $('deepSummary').textContent=!targets.length?'目前無重疊候選區。':!S.profile||S.profile.L/S.profile.W<3?'二次辨識目前適用細長型零件（長寬比 ≥ 3）。其他零件保留 V4 辨識。':'二次辨識 '+done.length+'/'+targets.length+' 區；位置一致 '+ok.length+' 區；待比對 '+(done.length-ok.length-errors.length)+' 區；未能分析 '+errors.length+' 區。'+(ok.length?'若採用一致候選，總數為 '+suggested+' PCS。':'')+' 目前數量不會自動覆寫，須逐區採用。';
-}
-async function runDeep(only=null){
-  if(S.busy||!S.img||!S.file||!S.profile||S.profile.L/S.profile.W<3)return;
-  clearTimeout(thrTimer);const targets=only?[S.comps[only]].filter(Boolean):deepTargets().filter(c=>!validDeep(c)||validDeep(c).error).slice(0,24);
-  if(!targets.length){toast('所有待覆核區已完成二次辨識');return;}
-  const key=deepKey();setBusy(true);$('deepAll').disabled=true;$('deepOne').disabled=true;$('deepUse').disabled=true;
-  try{const im=await openOriginal(S.file);for(let i=0;i<targets.length;i++){
-    if(deepKey()!==key)break;const c=targets[i];setStatus('深度辨識 '+(i+1)+' / '+targets.length+' 區（原始照片）');await new Promise(r=>setTimeout(r,35));
-    try{c.deep=deepAnalyze(c,im)}catch(e){console.warn(e);c.deep={key,error:'局部辨識失敗：'+(e.message||e)}}
-  }setStatus('深度辨識完成；候選數量須逐區確認。');}
-  catch(e){setStatus('深度辨識失敗：'+(e.message||e),true)}finally{setBusy(false);render();if(S.selected)drawDeep();}
+    c.lineKey=key;c.lineCount=kept.length;return c.lineCount;
+  }catch(e){console.warn('直線比對不可用',e);c.lineKey=key;c.lineCount=null;return null;}finally{mats.forEach(m=>m.delete());}
 }
 
 /* ===== 計數邏輯 ===== */
@@ -717,7 +493,7 @@ function classify(){
   const mA=minArea();let total=S.manualParts.length;S.autoIssues=[];
   const elongated=S.profile&&S.profile.L/S.profile.W>=3;   // 細長零件才用直線證據
   for(const c of S.comps.slice(1)){
-    let auto=0,cls='ignored',reason='';c.ratio=S.U?c.area/S.U:0;c.lines=null;c.fit=null;c.areaCount=0;c.fitUsed=false;
+    let auto=0,cls='ignored',reason='';c.ratio=S.U?c.area/S.U:0;c.lines=null;
     if(c.border&&S.ignoreBorder){reason='碰到照片邊緣，未計';}
     else if(!S.U||c.area<mA||c.ratio<NOISE_MAX){reason='太小，可能是雜點或零件碎片，未計';}
     else if(!colorOk(c)){reason='顏色和零件不同（可能是桌面、標籤或手），未計';}
@@ -730,37 +506,22 @@ function classify(){
     else{auto=Math.max(1,Math.round(c.ratio));cls='cluster';reason='重疊／形狀不明，面積估計 '+auto+' PCS';}
     c.lo=c.hi=auto;c.unsure=false;c.lineUsed=false;
     if(cls==='cluster'){
-      c.areaCount=auto;
-      if(elongated){c.fit=fitCluster(c);}
-      const f=c.fit;
-      // Prefer positioned instances if coverage is sufficient and supported; conservative fallback on disagreement.
-      // Even a matching count does not guarantee hidden parts are absent.
-      if(f&&f.parts.length&&f.coverage>=.83&&!f.limited){
-        const agree=f.parts.length===c.areaCount;
-        const extra=f.parts.length>c.areaCount&&!f.ambiguous&&f.coverage>=.90&&f.parts.every(p=>p.ends>=1);
-        if(agree||extra){auto=f.parts.length;c.fitUsed=true;}
-      }
-      c.unsure=true;
-      reason='待覆核：'+(c.fitUsed?'個體模板候選 '+auto:'面積備援 '+auto)+' PCS';
-      if(f&&f.parts.length!==c.areaCount)reason+='；兩法數量不同，請覆核';
-      if(f)reason+='；模板 '+f.parts.length+' PCS、遮罩覆蓋 '+Math.round(f.coverage*100)+'%'+(f.limited?'（搜尋受限）':'');
-      reason+='；面積 '+c.areaCount+' PCS'+(c.lines!==null?'；Hough '+c.lines+' 條（參考）':'');
+      // 面積估計的誤差約 5%（通用模式有陰影，約 8%），堆越大誤差越大：算出「可能的範圍」
+      const sig=(S.useMode==='pin'?PILE_ERR_PIN:PILE_ERR_GEN)*c.ratio+0.12;
+      c.lo=Math.max(1,Math.round(c.ratio-sig));c.hi=Math.max(c.lo,Math.round(c.ratio+sig));
+      c.unsure=c.hi>c.lo;
+      reason=(S.profile?'形狀異常／重疊':'重疊／形狀不明')+'，估計 '+auto+' PCS'+(c.unsure?'（可能 '+c.lo+'～'+c.hi+' 顆，請自己數）':'')
+        +(c.lines!==null?'；直線證據 '+c.lines+' 條（僅供參考）':'');
     }
     c.auto=auto;c.reason=reason;
     if(S.overrides.has(c.id)){c.count=S.overrides.get(c.id);c.cls='manual';}else{c.count=auto;c.cls=cls;}
-    if(c.cls==='cluster'&&(!c.fitUsed||c.fit.ambiguous||c.areaCount!==c.count||(c.lines!==null&&c.lines!==c.count)))S.autoIssues.push(c.id);
+    if(c.cls==='cluster'&&c.lines!==null&&Math.abs(c.lines-c.count)>=1)S.autoIssues.push(c.id);
     total+=c.count;
   }
   S.total=total;
 }
 
 /* ===== 畫面 ===== */
-let showFits=false;
-function drawFitLines(ctx,c,ox,oy,k=1,fs=12){
- if(!showFits||!c.fit||!c.fit.parts.length||c.cls!=='cluster')return;
- ctx.save();ctx.lineCap='round';ctx.font='bold '+fs+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
- c.fit.parts.forEach((p,i)=>{const x=(c.x+p.x-ox)*k,y=(c.y+p.y-oy)*k,dx=p.ux*p.len*k/2,dy=p.uy*p.len*k/2;ctx.beginPath();ctx.moveTo(x-dx,y-dy);ctx.lineTo(x+dx,y+dy);ctx.strokeStyle='#083344';ctx.lineWidth=Math.max(2,fs*.24);ctx.stroke();ctx.strokeStyle='#22d3ee';ctx.lineWidth=Math.max(1,fs*.13);ctx.stroke();ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.strokeText('T'+(i+1),x,y);ctx.fillStyle='#083344';ctx.fillText('T'+(i+1),x,y);});ctx.restore();
-}
 const COLORS = {
   single: [22, 163, 74, 150], cluster: [234, 88, 12, 165], manual: [37, 99, 235, 165], ignored: [120, 120, 120, 110]
 };
@@ -828,7 +589,6 @@ function render() {
   if(!S.raw)S.manualParts.forEach((p,i)=>{
     const x=p.x-V.x,y=p.y-V.y;ctx.beginPath();ctx.arc(x,y,Math.max(5,fs*.65),0,Math.PI*2);ctx.fillStyle='#2563eb';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff';ctx.fillText('+'+(i+1),x,y);
   });
-  if(!S.raw) for(const c of S.comps.slice(1))drawFitLines(ctx,c,V.x,V.y,1,Math.max(9,fs*.7));
   // 選取中的區塊畫虛線框
   if (S.selected) {
     const c = S.comps[S.selected], pad = Math.max(4, fs / 3);
@@ -841,12 +601,24 @@ function render() {
 // 統計：單顆幾個、黏在一起幾堆（估計幾顆）、手動修改幾塊
 function countStats(){let singles=0,clusters=0,clusterSum=0,manual=0,unsure=0,dlo=0,dhi=0;for(const c of S.comps.slice(1)){if(c.cls==='single')singles++;else if(c.cls==='cluster'){clusters++;clusterSum+=c.count;if(c.unsure){unsure++;dlo+=c.lo-c.count;dhi+=c.hi-c.count;}}else if(c.cls==='manual')manual++;}return{singles,clusters,clusterSum,manual,unsure,lo:S.total+dlo,hi:S.total+dhi};}
 
+// 逐堆檢查：還沒確認的「黏在一起」區塊，標「?」的優先，再從大堆到小堆
+function pileQueue(){
+  return S.comps.slice(1).filter(c=>c.cls==='cluster').sort((a,b)=>(b.unsure-a.unsure)||(b.area-a.area)).map(c=>c.id);
+}
+function gotoNextPile(){
+  const q=pileQueue();
+  if(!q.length){S.selected=null;hideSheet();render();toast('黏在一起的堆都確認過了，可以按「確認已人工覆核整張照片」');return;}
+  const i=q.indexOf(S.lastPile),next=q[(i+1)%q.length];   // 剛改好的那堆會離開清單，自動從最優先的開始
+  S.lastPile=next;openSheet(next);
+}
 function updateSummary(){
   const {singles,clusters,clusterSum,manual,unsure,lo,hi}=countStats();$('totalNum').textContent=S.total;
+  $('nextPileBtn').hidden=!clusters;$('nextPileBtn').textContent='下一個待覆核區（剩 '+clusters+' 堆）';
+  $('sheetNextBtn').textContent=clusters?'下一堆 ›（剩 '+clusters+'）':'下一堆 ›';
   const badge=$('badge');badge.hidden=false;badge.className='badge '+(S.reviewed?'ok':'est');
-  badge.textContent=S.reviewed?'✓ 操作者已覆核（非系統保證）':clusters?'⚠ 含 '+clusterSum+' PCS 估計'+(unsure?'（'+unsure+' 區待確認）':'')+'，尚未覆核':'自動辨識完成，尚未覆核';
+  badge.textContent=S.reviewed?'✓ 操作者已覆核（非系統保證）':clusters?'⚠ 含 '+clusterSum+' PCS 估計'+(unsure?'（'+unsure+' 堆不確定）':'')+'，尚未覆核':'自動辨識完成，尚未覆核';
   $('totalBox').classList.toggle('est',!S.reviewed);
-  $('summary').textContent='單顆候選 '+singles+'・待覆核 '+clusters+' 區（估 '+clusterSum+'）・人工修改 '+manual+' 區・人工補入 '+S.manualParts.length+' PCS';
+  $('summary').textContent='單顆候選 '+singles+'・待覆核 '+clusters+' 區（估 '+clusterSum+'）・人工修改 '+manual+' 區・人工補入 '+S.manualParts.length+' PCS'+(unsure?'・總數可能 '+lo+'～'+hi:'');
   const modeTxt='辨識：'+(S.useMode==='pin'?'金色模式':'通用模式')+(S.mode==='auto'?'（'+S.autoReason+'）':'（手動選擇）')+'・';
   $('info').textContent=modeTxt+(S.U?'單顆基準 '+Math.round(S.U)+' px²（'+(S.Umanual?'人工':'自動，'+S.refCount+' 個候選')+'）'+(S.profile?'・長 '+S.profile.L.toFixed(1)+' px／寬 '+S.profile.W.toFixed(1)+' px':'')+'・門檻 '+S.T:'沒有可靠的單顆基準');
   const warns=[];
@@ -855,17 +627,14 @@ function updateSummary(){
   if(S.U&&!S.profile)warns.push('沒有建立形狀基準，目前只用面積判斷，請特別注意覆核。');
   const offColor=S.comps.slice(1).filter(c=>!(c.border&&S.ignoreBorder)&&S.U&&c.area>=.5*S.U&&!colorOk(c)).length;
   if(offColor)warns.push('有 '+offColor+' 塊顏色和零件不同，沒有計算（灰色）。如果其實是零件，請點它修改數量。');
-  if(clusters)warns.push('有 '+clusters+' 個重疊或形狀異常區，模板與面積結果都不是保證件數。請逐區確認；完全被遮住的零件無法從單張照片辨識。');
-   const piles=S.comps.slice(1).filter(c=>c.cls==='cluster');const fitN=piles.filter(c=>c.fitUsed).length,fitCount=piles.reduce((a,c)=>a+(c.fitUsed?c.count:0),0),fallback=piles.reduce((a,c)=>a+(!c.fitUsed?c.count:0),0);
-   const areaTotal=S.total+piles.reduce((a,c)=>a+c.areaCount-c.count,0),templateTotal=S.total+piles.reduce((a,c)=>a+(c.fit&&c.fit.parts.length?c.fit.parts.length:c.count)-c.count,0);
-   $('fitInfo').textContent='目前 '+S.total+' PCS；重疊區面積換算合計 '+areaTotal+' PCS；模板候選合計（不足處沿用目前值） '+templateTotal+' PCS。初次個體分析：'+fitN+' 區採模板候選（'+fitCount+' PCS），其餘 '+(piles.length-fitN)+' 區採面積備援（'+fallback+' PCS）。'+(S.autoIssues.length?' 優先覆核 '+S.autoIssues.length+' 區。':'')+' 青色 T 線是推定位置，不是人工確認。兩法不一致時通常保留面積備援，並列入優先覆核。';$('nextPile').disabled=!piles.length;
+  if(clusters)warns.push('有 '+clusters+' 堆黏在一起，數字是估計的'+(unsure?'；其中 '+unsure+' 堆（圖上標「?」）可能差 1 顆以上，請優先點開自己數，或撥開再拍':'')+'。完全被壓住的零件，單張照片看不到。');
   const edgePart=c=>{if(!(c.border&&c.area>=.3*S.U&&c.area<=1.6*S.U&&colorOk(c)))return false;if(!S.profile)return true;geometry(c);return !!c.W&&c.W<=1.6*S.profile.W&&c.L<=1.2*S.profile.L;};   // 被邊緣切到的零件不會比一顆長
   if(S.ignoreBorder&&S.U&&S.comps.slice(1).some(edgePart))warns.push('照片邊緣有像零件的東西被排除（只拍到一部分），請把零件移離邊緣再拍，或查看原圖。');
   $('warn').innerHTML=warns.map(t=>'<p>'+t+'</p>').join('');$('warn').hidden=!warns.length;
   const ix=S.acc.findIndex(a=>a.id===S.photoId);$('addBtn').textContent=ix>=0?'更新這張照片的累計':'＋ 加入累計';$('addBtn').disabled=S.busy||!S.photoId;
   $('reviewBtn').textContent=S.reviewed?'✓ 已覆核（點此取消）':'確認已人工覆核整張照片';$('reviewBtn').disabled=S.busy;
   $('undoBtn').disabled=!S.undo.length;$('manualHint').hidden=!S.addMode;$('manualBtn').textContent=S.addMode?'結束補入模式':'＋ 補入漏判';
-  deepSummary();updateTest();
+  updateTest();
 }
 function invalidate(){S.reviewed=false;}
 function pushUndo(){S.undo.push({overrides:[...S.overrides],manualParts:S.manualParts.map(p=>({...p})),U:S.U,Umanual:S.Umanual,profile:S.profile?{...S.profile}:null,refCount:S.refCount,refColor:S.refColor?{...S.refColor}:null,colorTol:S.colorTol});if(S.undo.length>50)S.undo.shift();}
@@ -885,13 +654,13 @@ async function readBytes(f){
     catch(e2){console.warn('無法先讀取照片，改用直接開啟',e2);return null;}
   }
 }
-function setBusy(b){S.busy=b;['camInput','fileInput','partMode','resSel','thr','thrAuto','ignBorder','addBtn','reviewBtn','useCur','saveBtn','deepAll','deepOne','deepUse','manualBtn','undoBtn','rawBtn','numBtn','fitBtn','nextPile','viewBtn','plusBtn','minusBtn','zeroBtn','resetBlobBtn','refBtn','closeSheetBtn','pileUse','pileClear','templateUse','deepMethod','testSave'].forEach(id=>$(id).disabled=b);}
+function setBusy(b){S.busy=b;['camInput','fileInput','partMode','resSel','thr','thrAuto','ignBorder','addBtn','reviewBtn','useCur','saveBtn','nextPileBtn','sheetNextBtn'].forEach(id=>$(id).disabled=b);}
 
 /* ===== 主流程 ===== */
 async function processFile(file){
   if(S.busy)return;const job=++S.job,t0=performance.now();setBusy(true);$('resultCard').hidden=true;
-  S.labels=null;S.comps=[null];S.photoId=null;S.img=null;S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
-  clearEdits();S.selected=null;S.marks=[];S.marksFor=null;hideSheet();$('truth').value='';
+  S.labels=null;S.photoId=null;S.img=null;S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
+  clearEdits();S.selected=null;hideSheet();$('truth').value='';
   try{
     setStatus('計算中…');await new Promise(r=>setTimeout(r,30));
     const imgData=await decodeImage(file,S.maxDim);if(job!==S.job)return;
@@ -925,7 +694,7 @@ async function onFilePicked(ev) {
 function rerunThreshold(){
   if(!S.diff||!S.img||S.busy)return;
   if(!allowReprocess()){S.T=S.appliedT;S.manualT=S.T!==S.autoT;updateThrUI();return;}
-  const t0=performance.now();clearEdits();decideMode(S.T);segment(S.T);estimateUnit();classify();S.initialTotal=S.total;S.elapsed=(performance.now()-t0)/1000;computeView();render();
+  const t0=performance.now();clearEdits();segment(S.T);estimateUnit();classify();S.initialTotal=S.total;S.elapsed=(performance.now()-t0)/1000;computeView();render();
 }
 
 function updateThrUI() {
@@ -973,17 +742,15 @@ function drawPile(){
   ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,0,0,cv2.width,cv2.height);
   const r=Math.max(9,(S.profile?S.profile.W:8)*k*.45),fs=Math.round(r*1.1);S.pileView.r=r;
   ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold '+fs+'px sans-serif';
-  drawFitLines(ctx,c,x0,y0,k,Math.max(10,fs*.75));
   S.marks.forEach((pt,i)=>{const X=(pt.x-x0)*k,Y=(pt.y-y0)*k;ctx.beginPath();ctx.arc(X,Y,r,0,Math.PI*2);ctx.fillStyle='rgba(37,99,235,.85)';ctx.fill();
     ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#fff';ctx.fillText(String(i+1),X,Y+1);});
-  $('templateUse').hidden=!(c.fit&&c.fit.parts.length);$('templateUse').textContent='採用模板候選（'+(c.fit?c.fit.parts.length:0)+'）';
   $('pileUse').textContent='用記號數量（'+S.marks.length+'）';$('pileUse').disabled=!S.marks.length;
 }
 function fillSheet() {
   const c = S.comps[S.selected];
   if (!c) return;
   if (S.marksFor !== c.id) { S.marks = []; S.marksFor = c.id; }
-  drawPile();drawDeep();
+  drawPile();
   $('sheetCount').textContent = c.count;
   $('sheetTitle').textContent = c.cls === 'manual' ? '這一塊：手動設定 ' + c.count + ' 顆' : '這一塊：' + c.reason;
   $('sheetInfo').textContent = '面積 ' + c.area + ' 像素' + (S.U ? '（約一顆的 ' + c.ratio.toFixed(2) + ' 倍）' : '') +
@@ -1056,18 +823,15 @@ $('refBtn').onclick=()=>{
  else{const refs=S.comps.slice(1).filter(q=>q.area>=minArea()&&!(S.ignoreBorder&&q.border)&&q.area>=.7*c.area&&q.area<=1.3*c.area);S.U=refs.length?median(refs.map(q=>q.area)):c.area;S.refCount=refs.length;S.profile=null;setRefColor(refs.length?refs:[c]);}
  S.Umanual=true;S.overrides.set(c.id,1);classify();render();fillSheet();toast('已設定單顆基準');
 };
-$('deepAll').onclick=()=>runDeep();$('deepOne').onclick=()=>runDeep(S.selected);$('deepMethod').onchange=drawDeep;
-$('deepUse').onclick=()=>{const c=S.comps[S.selected],d=validDeep(c);if(!d||d.error||S.busy)return;const m=$('deepMethod').value,parts=m==='edge'?d.edge.parts:m==='tight'?d.tight.parts:m==='relaxed'?d.relaxed.parts:[];if(parts.length&&confirm('是否已核對此區原圖與全部候選位置，採用 '+parts.length+' PCS？')){setOverride(c.id,parts.length);toast('已採用人工核對的候選數');}};
-$('fitBtn').onclick=()=>{showFits=!showFits;$('fitBtn').textContent=showFits?'隱藏個體候選線':'顯示個體候選線';if(S.img){render();if(S.selected)drawPile();}};
-let lastPile=null; $('nextPile').onclick=()=>{const ids=S.comps.slice(1).filter(c=>c.cls==='cluster').map(c=>c.id);if(!ids.length)return;const ordered=ids.slice().sort((a,b)=>{const rank=id=>{const d=validDeep(S.comps[id]);return d?(d.agree?2:0):S.autoIssues.includes(id)?0:1;};return rank(a)-rank(b);});lastPile=ordered[(ordered.indexOf(lastPile)+1)%ordered.length];openSheet(lastPile);};
 $('closeSheetBtn').onclick=()=>{S.selected=null;hideSheet();render();};
+$('nextPileBtn').onclick=()=>{if(S.img&&!S.busy)gotoNextPile();};
+$('sheetNextBtn').onclick=()=>{if(S.img&&!S.busy)gotoNextPile();};
 $('pileCv').addEventListener('click',e=>{
-  const v=S.pileView;if(S.busy||!v||!S.selected)return;const cnv=e.currentTarget,r=cnv.getBoundingClientRect();
+  const v=S.pileView;if(!v||!S.selected)return;const cnv=e.currentTarget,r=cnv.getBoundingClientRect();
   const x=v.x0+(e.clientX-r.left)*cnv.width/r.width/v.k,y=v.y0+(e.clientY-r.top)*cnv.height/r.height/v.k;
   const tol=v.r/v.k,i=S.marks.findIndex(p=>Math.hypot(p.x-x,p.y-y)<tol);   // 只有點在記號圓點上才取消
   if(i>=0)S.marks.splice(i,1);else S.marks.push({x,y});drawPile();
 });
-$('templateUse').onclick=()=>{const c=S.comps[S.selected];if(c&&c.fit&&c.fit.parts.length&&confirm('請先核對青色候選線，是否確定採用 '+c.fit.parts.length+' PCS？')){setOverride(c.id,c.fit.parts.length);toast('已依操作者選擇更新；整張仍需覆核');}};
 $('pileClear').onclick=()=>{S.marks=[];drawPile();};
 $('pileUse').onclick=()=>{const c=S.comps[S.selected];if(c&&S.marks.length){setOverride(c.id,S.marks.length);toast('這一堆改成 '+S.marks.length+' 顆');}};
 let thrTimer=null;
@@ -1086,8 +850,8 @@ $('addBtn').onclick=()=>{
 };
 $('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
 $('truth').oninput=updateTest;
-$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'5.0',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed,deepRegions:S.comps.slice(1).filter(c=>validDeep(c)&&!validDeep(c).error).length,deepAgree:S.comps.slice(1).filter(c=>validDeep(c)&&validDeep(c).agree).length});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
-$('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds','deepRegions','deepAgree'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.3',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
   // 下載的圖：上方加一條白色標題（總數、時間），下面是標示圖
