@@ -31,6 +31,12 @@
   .btn:disabled { opacity: .5; cursor: default; }
   .total { font-size: 44px; font-weight: 800; line-height: 1.1; }
   .total small { font-size: 20px; font-weight: 600; margin-left: 4px; }
+  .total.est #totalNum { color: #c2410c; }
+  .badge { display: inline-block; margin-top: 6px; padding: 5px 12px; border-radius: 999px; font-weight: 700; font-size: 16px; }
+  .badge.ok { background: #dcfce7; color: #166534; }
+  .badge.est { background: #ffedd5; color: #9a3412; }
+  .est-text { color: #c2410c; font-size: 14px; }
+  .ok-text { color: #166534; font-size: 14px; font-weight: 700; }
   .summary { margin-top: 4px; }
   .muted { color: var(--muted); font-size: 13px; }
   .warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 10px; padding: 8px 10px; margin-top: 8px; font-size: 14px; }
@@ -83,7 +89,8 @@
   </section>
 
   <section id="resultCard" class="card" hidden>
-    <div class="total"><span id="totalNum">0</span><small>顆</small></div>
+    <div id="totalBox" class="total"><span id="totalNum">0</span><small>顆</small></div>
+    <div id="badge" class="badge" hidden></div>
     <div id="summary" class="summary"></div>
     <div id="info" class="muted"></div>
     <div id="warn" class="warn" hidden></div>
@@ -105,7 +112,7 @@
   <section class="card">
     <h2>累計（多張照片加總）</h2>
     <ol id="accList"></ol>
-    <div class="acc-total">合計 <b id="accTotal">0</b> 顆</div>
+    <div class="acc-total">合計 <b id="accTotal">0</b> 顆 <span id="accNote"></span></div>
     <button id="accClear" class="btn small">清除累計</button>
   </section>
 
@@ -189,7 +196,8 @@ const S = {
   overrides: new Map(), // 手動修改：塊編號 → 顆數
   selected: null, ignoreBorder: true, maxDim: 2000,
   view: null, fullView: false,  // 畫面顯示範圍（預設放大到有零件的區域）
-  acc: [], accIndex: null, total: 0
+  acc: [], accIndex: null, total: 0,
+  accSum: 0, accEst: 0, calcEst: 0   // 累計合計、其中估計的數量、換算用的樣本裡估計的數量
 };
 const $ = (id) => document.getElementById(id);
 
@@ -442,7 +450,8 @@ function render() {
   updateSummary();
 }
 
-function updateSummary() {
+// 統計：單顆幾個、黏在一起幾堆（估計幾顆）、手動修改幾塊
+function countStats() {
   let singles = 0, clusters = 0, clusterSum = 0, manual = 0;
   for (let i = 1; i < S.comps.length; i++) {
     const c = S.comps[i];
@@ -450,7 +459,22 @@ function updateSummary() {
     else if (c.cls === 'cluster') { clusters++; clusterSum += c.count; }
     else if (c.cls === 'manual') manual++;
   }
+  return { singles, clusters, clusterSum, manual };
+}
+
+function updateSummary() {
+  const { singles, clusters, clusterSum, manual } = countStats();
   $('totalNum').textContent = S.total;
+  // 標示這個數字能不能直接用：全部分開＝準確；有黏在一起＝含估計
+  const badge = $('badge');
+  $('totalBox').classList.toggle('est', clusters > 0);
+  if (!S.U || S.total === 0) badge.hidden = true;
+  else {
+    badge.hidden = false;
+    if (clusters) { badge.className = 'badge est'; badge.textContent = '⚠ 含估計 ' + clusterSum + ' 顆，不是準確數字'; }
+    else if (manual) { badge.className = 'badge ok'; badge.textContent = '✓ 已手動確認'; }
+    else { badge.className = 'badge ok'; badge.textContent = '✓ 全部分開，數量準確'; }
+  }
   const parts = ['單顆 ' + singles + '（準確）'];
   if (clusters) parts.push('黏在一起 ' + clusters + ' 堆，約 ' + clusterSum + ' 顆（估計）');
   if (manual) parts.push('手動修改 ' + manual + ' 塊');
@@ -466,7 +490,7 @@ function updateSummary() {
   $('warn').innerHTML = warns.map((t) => '<p>' + t + '</p>').join('');
   $('warn').hidden = !warns.length;
 
-  if (S.accIndex !== null && S.acc[S.accIndex]) { S.acc[S.accIndex].n = S.total; saveAcc(); renderAcc(); }
+  if (S.accIndex !== null && S.acc[S.accIndex]) { S.acc[S.accIndex].n = S.total; S.acc[S.accIndex].est = clusterSum; saveAcc(); renderAcc(); }
   $('addBtn').textContent = S.accIndex !== null ? '✓ 已加入累計（修改會自動更新）' : '＋ 加入累計';
   $('addBtn').disabled = S.accIndex !== null;
 }
@@ -556,13 +580,16 @@ function loadAcc() { try { return JSON.parse(localStorage.getItem(ACC_KEY) || '[
 function saveAcc() { try { localStorage.setItem(ACC_KEY, JSON.stringify(S.acc)); } catch (e) {} }
 function renderAcc() {
   const ol = $('accList'); ol.innerHTML = '';
-  let sum = 0;
+  let sum = 0, estSum = 0, unknown = false;
   S.acc.forEach((it, i) => {
     sum += it.n;
+    const known = typeof it.est === 'number';   // 舊版存的紀錄沒有這個資料
+    if (known) estSum += it.est; else unknown = true;
+    const mark = !known ? '' : (it.est ? ' <span class="est-text">（含估計 ' + it.est + '）</span>' : ' <span class="ok-text">✓</span>');
     const li = document.createElement('li');
     const t = new Date(it.t);
     const hm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-    li.innerHTML = '<span>第 ' + (i + 1) + ' 張　<b>' + it.n + '</b> 顆　<span class="muted">' + hm + '</span></span>';
+    li.innerHTML = '<span>第 ' + (i + 1) + ' 張　<b>' + it.n + '</b> 顆' + mark + '　<span class="muted">' + hm + '</span></span>';
     const del = document.createElement('button'); del.textContent = '✕'; del.title = '刪除';
     del.onclick = () => {
       S.acc.splice(i, 1);
@@ -572,7 +599,9 @@ function renderAcc() {
     li.appendChild(del); ol.appendChild(li);
   });
   $('accTotal').textContent = sum;
-  S.accSum = sum;
+  $('accNote').innerHTML = !S.acc.length ? '' : estSum ? '<span class="est-text">⚠ 含估計 ' + estSum + ' 顆，不是準確數字</span>'
+    : unknown ? '' : '<span class="ok-text">✓ 全部準確</span>';
+  S.accSum = sum; S.accEst = estSum;
   calc();
 }
 
@@ -584,6 +613,7 @@ function calc() {
   const unit = sw / n;
   let html = '單重：<b>' + (unit >= 1 ? unit.toFixed(4) : unit.toPrecision(4)) + '</b> g／顆';
   if (bw > 0) html += '<br>整袋約：<b style="font-size:22px">' + Math.round(bw / unit).toLocaleString() + '</b> 顆';
+  if (S.calcEst > 0) html += '<br><span class="est-text">⚠ 樣本數量裡有 ' + S.calcEst + ' 顆是估計的，換算結果可能有誤差</span>';
   out.innerHTML = html;
 }
 
@@ -641,7 +671,7 @@ $('resSel').onchange = () => { S.maxDim = parseInt($('resSel').value, 10); if (S
 
 $('addBtn').onclick = () => {
   if (!S.img || S.accIndex !== null) return;
-  S.acc.push({ n: S.total, t: Date.now() }); S.accIndex = S.acc.length - 1;
+  S.acc.push({ n: S.total, est: countStats().clusterSum, t: Date.now() }); S.accIndex = S.acc.length - 1;
   saveAcc(); renderAcc(); updateSummary(); toast('已加入累計');
 };
 $('accClear').onclick = () => {
@@ -654,13 +684,19 @@ $('saveBtn').onclick = () => {
   const view = $('view'), d = new Date();
   const p2 = (v) => String(v).padStart(2, '0');
   const when = d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
-  const est = S.comps.slice(1).filter((c) => c.cls === 'cluster').reduce((s, c) => s + c.count, 0);
-  const fs = Math.max(16, Math.round(view.width / 28)), hh = Math.round(fs * 2.2);
-  const out = document.createElement('canvas'); out.width = view.width; out.height = view.height + hh;
-  const ctx = out.getContext('2d');
+  const st = countStats();
+  const tag = st.clusters ? '（含估計 ' + st.clusterSum + ' 顆）' : st.manual ? '（已手動確認）' : '（全部分開，數量準確）';
+  const title = '共 ' + S.total + ' 顆' + tag + '　' + when;
+  let fs = Math.max(16, Math.round(view.width / 28));
+  const out = document.createElement('canvas'), ctx = out.getContext('2d');
+  ctx.font = 'bold ' + fs + 'px sans-serif';
+  const maxW = view.width - fs * 1.2, tw = ctx.measureText(title).width;
+  if (tw > maxW) fs = Math.max(10, Math.floor(fs * maxW / tw));   // 字太長就縮小
+  const hh = Math.round(fs * 2.2);
+  out.width = view.width; out.height = view.height + hh;
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, hh);
-  ctx.fillStyle = '#111827'; ctx.font = 'bold ' + fs + 'px sans-serif'; ctx.textBaseline = 'middle';
-  ctx.fillText('共 ' + S.total + ' 顆' + (est ? '（含估計 ' + est + ' 顆）' : '') + '　' + when, fs * 0.6, hh / 2);
+  ctx.fillStyle = st.clusters ? '#9a3412' : '#166534'; ctx.font = 'bold ' + fs + 'px sans-serif'; ctx.textBaseline = 'middle';
+  ctx.fillText(title, fs * 0.6, hh / 2);
   ctx.drawImage(view, 0, hh);
   out.toBlob((b) => {
     if (!b) return;
@@ -671,9 +707,10 @@ $('saveBtn').onclick = () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }, 'image/jpeg', 0.9);
 };
-['cSample', 'cSampleW', 'cBagW'].forEach((id) => $(id).addEventListener('input', calc));
-$('useAcc').onclick = () => { $('cSample').value = S.accSum || ''; calc(); };
-$('useCur').onclick = () => { $('cSample').value = S.img ? S.total : ''; calc(); };
+$('cSample').addEventListener('input', () => { S.calcEst = 0; calc(); });   // 自己輸入的數字，不標估計
+['cSampleW', 'cBagW'].forEach((id) => $(id).addEventListener('input', calc));
+$('useAcc').onclick = () => { $('cSample').value = S.accSum || ''; S.calcEst = S.accEst || 0; calc(); };
+$('useCur').onclick = () => { $('cSample').value = S.img ? S.total : ''; S.calcEst = S.img ? countStats().clusterSum : 0; calc(); };
 
 /* ===== 開始 ===== */
 S.acc = loadAcc(); renderAcc();
