@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.1</title>
+<title>零件拍照計數 V3.2</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -63,6 +63,9 @@
   .sheet { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top-left-radius: 16px; border-top-right-radius: 16px;
     box-shadow: 0 -4px 20px rgba(0,0,0,.18); padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); z-index: 10; }
   .sheet-inner { max-width: 760px; margin: 0 auto; }
+  .sheet { max-height: 88vh; overflow-y: auto; }
+  .pile-box { margin-top: 8px; }
+  .pile-box canvas { display: block; width: 100%; max-height: 40vh; object-fit: contain; border-radius: 8px; background: #e5e7eb; touch-action: manipulation; }
   .sheet-title { font-weight: 700; }
   .stepper { display: flex; align-items: center; gap: 14px; margin: 10px 0 4px; font-size: 18px; }
   .stepper button { width: 54px; height: 48px; font-size: 26px; border-radius: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
@@ -74,7 +77,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.1</h1>
+  <h1>零件拍照計數 V3.2</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -101,7 +104,7 @@
       <span><i class="sw b"></i>手動修改</span><span><i class="sw x"></i>不計</span>
     </div>
     <div class="field" style="justify-content:space-between;margin:4px 0 0">
-      <span class="muted">點區塊修正；橘色為待覆核，藍色為人工修正。</span>
+      <span class="muted">點區塊修正；橘色為待覆核（標「?」的優先），藍色為人工修正。</span>
       <button id="viewBtn" class="btn small">放大零件區</button>
     </div>
     <canvas id="view"></canvas>
@@ -176,6 +179,11 @@
       <button id="minusBtn" aria-label="減一">−</button><b id="sheetCount">1</b><button id="plusBtn" aria-label="加一">＋</button><span>顆</span>
     </div>
     <div id="sheetInfo" class="muted"></div>
+    <div id="pileBox" class="pile-box" hidden>
+      <canvas id="pileCv"></canvas>
+      <div class="muted">放大圖：每根零件點一下做記號（再點一次取消），數完按下面的按鈕。</div>
+      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="pileClear" class="btn small">清除記號</button></div>
+    </div>
     <div class="btnrow">
       <button id="refBtn" class="btn">設為「一顆」的基準</button>
       <button id="zeroBtn" class="btn">不要算這塊</button>
@@ -201,6 +209,8 @@ const SINGLE_MAX = 1.5;     // 面積小於「一顆」的 1.5 倍 → 算 1 顆
 const NOISE_MAX = 0.4;      // 面積小於「一顆」的 0.4 倍 → 當成雜點不算
 const WARM_MIN = 0.35;      // 自動判斷：零件區域的暖色像素超過這個比例，就當成金色零件
 const COLOR_TOL_MIN = 45;   // 顏色容許差異的下限（超過就當成不是零件）
+const PILE_ERR_PIN = 0.05;  // 金色模式：一堆的面積估計誤差約 5%
+const PILE_ERR_GEN = 0.08;  // 通用模式：有陰影，誤差約 8%
 const ACC_KEY = 'partcount.acc.v1'; // 相容原版累計
 const TEST_KEY = 'partcount.tests.v2';
 
@@ -218,7 +228,7 @@ const S = {
   view: null, fullView: true,  // 畫面顯示範圍（預設放大到有零件的區域）
   acc: [], accIndex: null, total: 0,
   accSum: 0, accEst: 0, calcEst: 0,
-  mode:'auto', useMode:'pin', autoReason:'', showNums:true, refColor:null, colorTol:null,
+  mode:'auto', useMode:'pin', autoReason:'', showNums:true, refColor:null, colorTol:null, marks:[], marksFor:null, pileView:null,
   chroma:null, warm:null, profile:null, manualParts:[], undo:[],
   addMode:false, raw:false, reviewed:false, busy:false, job:0, photoId:null,
   elapsed:0, initialTotal:0, calcUnreviewed:false, accUnreviewed:false, autoIssues:[], tests:[]
@@ -492,6 +502,15 @@ function classify(){
       else{auto=Math.max(1,Math.round(c.ratio));cls='cluster';c.lines=elongated?lineEvidence(c):null;reason='形狀異常／重疊，面積估計 '+auto+' PCS';if(c.lines!==null)reason+='；直線證據 '+c.lines+' 條';}
     }else if(c.ratio<SINGLE_MAX){auto=1;cls='single';reason='面積符合單顆候選';}
     else{auto=Math.max(1,Math.round(c.ratio));cls='cluster';reason='重疊／形狀不明，面積估計 '+auto+' PCS';}
+    c.lo=c.hi=auto;c.unsure=false;c.lineUsed=false;
+    if(cls==='cluster'){
+      // 面積估計的誤差約 5%（通用模式有陰影，約 8%），堆越大誤差越大：算出「可能的範圍」
+      const sig=(S.useMode==='pin'?PILE_ERR_PIN:PILE_ERR_GEN)*c.ratio+0.12;
+      c.lo=Math.max(1,Math.round(c.ratio-sig));c.hi=Math.max(c.lo,Math.round(c.ratio+sig));
+      c.unsure=c.hi>c.lo;
+      reason=(S.profile?'形狀異常／重疊':'重疊／形狀不明')+'，估計 '+auto+' PCS'+(c.unsure?'（可能 '+c.lo+'～'+c.hi+' 顆，請自己數）':'')
+        +(c.lines!==null?'；直線證據 '+c.lines+' 條（僅供參考）':'');
+    }
     c.auto=auto;c.reason=reason;
     if(S.overrides.has(c.id)){c.count=S.overrides.get(c.id);c.cls='manual';}else{c.count=auto;c.cls=cls;}
     if(c.cls==='cluster'&&c.lines!==null&&Math.abs(c.lines-c.count)>=1)S.autoIssues.push(c.id);
@@ -560,10 +579,10 @@ function render() {
     const c = S.comps[i];
     if(c.count<=0)continue;
     if(c.cls==='single'){++seq;if(!S.showNums)continue;}
-    const txt=c.cls==='single' ? String(seq) : c.cls==='cluster' ? '≈'+c.count : 'M:'+c.count;
+    const txt=c.cls==='single' ? String(seq) : c.cls==='cluster' ? '≈'+c.count+(c.unsure?'?':'') : 'M:'+c.count;
     const tx = Math.min(V.w - fs, Math.max(fs, c.x + c.w - V.x + fs * 0.8)), ty = Math.min(V.h - fs, Math.max(fs, c.cy - V.y));
     ctx.lineWidth = Math.max(3, fs / 4); ctx.strokeStyle = '#fff'; ctx.strokeText(txt, tx, ty);
-    ctx.fillStyle = c.cls === 'cluster' ? '#c2410c' : c.cls==='single'?'#166534':'#1d4ed8'; ctx.fillText(txt, tx, ty);
+    ctx.fillStyle = c.cls === 'cluster' ? (c.unsure?'#b91c1c':'#c2410c') : c.cls==='single'?'#166534':'#1d4ed8'; ctx.fillText(txt, tx, ty);
   }
   if(!S.raw)S.manualParts.forEach((p,i)=>{
     const x=p.x-V.x,y=p.y-V.y;ctx.beginPath();ctx.arc(x,y,Math.max(5,fs*.65),0,Math.PI*2);ctx.fillStyle='#2563eb';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff';ctx.fillText('+'+(i+1),x,y);
@@ -578,14 +597,14 @@ function render() {
 }
 
 // 統計：單顆幾個、黏在一起幾堆（估計幾顆）、手動修改幾塊
-function countStats(){let singles=0,clusters=0,clusterSum=0,manual=0;for(const c of S.comps.slice(1)){if(c.cls==='single')singles++;else if(c.cls==='cluster'){clusters++;clusterSum+=c.count;}else if(c.cls==='manual')manual++;}return{singles,clusters,clusterSum,manual};}
+function countStats(){let singles=0,clusters=0,clusterSum=0,manual=0,unsure=0,dlo=0,dhi=0;for(const c of S.comps.slice(1)){if(c.cls==='single')singles++;else if(c.cls==='cluster'){clusters++;clusterSum+=c.count;if(c.unsure){unsure++;dlo+=c.lo-c.count;dhi+=c.hi-c.count;}}else if(c.cls==='manual')manual++;}return{singles,clusters,clusterSum,manual,unsure,lo:S.total+dlo,hi:S.total+dhi};}
 
 function updateSummary(){
-  const {singles,clusters,clusterSum,manual}=countStats();$('totalNum').textContent=S.total;
+  const {singles,clusters,clusterSum,manual,unsure,lo,hi}=countStats();$('totalNum').textContent=S.total;
   const badge=$('badge');badge.hidden=false;badge.className='badge '+(S.reviewed?'ok':'est');
-  badge.textContent=S.reviewed?'✓ 操作者已覆核（非系統保證）':clusters?'⚠ 含 '+clusterSum+' PCS 估計，尚未覆核':'自動辨識完成，尚未覆核';
+  badge.textContent=S.reviewed?'✓ 操作者已覆核（非系統保證）':clusters?'⚠ 含 '+clusterSum+' PCS 估計'+(unsure?'（'+unsure+' 堆不確定）':'')+'，尚未覆核':'自動辨識完成，尚未覆核';
   $('totalBox').classList.toggle('est',!S.reviewed);
-  $('summary').textContent='單顆候選 '+singles+'・待覆核 '+clusters+' 區（估 '+clusterSum+'）・人工修改 '+manual+' 區・人工補入 '+S.manualParts.length+' PCS';
+  $('summary').textContent='單顆候選 '+singles+'・待覆核 '+clusters+' 區（估 '+clusterSum+'）・人工修改 '+manual+' 區・人工補入 '+S.manualParts.length+' PCS'+(unsure?'・總數可能 '+lo+'～'+hi:'');
   const modeTxt='辨識：'+(S.useMode==='pin'?'金色模式':'通用模式')+(S.mode==='auto'?'（'+S.autoReason+'）':'（手動選擇）')+'・';
   $('info').textContent=modeTxt+(S.U?'單顆基準 '+Math.round(S.U)+' px²（'+(S.Umanual?'人工':'自動，'+S.refCount+' 個候選')+'）'+(S.profile?'・長 '+S.profile.L.toFixed(1)+' px／寬 '+S.profile.W.toFixed(1)+' px':'')+'・門檻 '+S.T:'沒有可靠的單顆基準');
   const warns=[];
@@ -594,7 +613,7 @@ function updateSummary(){
   if(S.U&&!S.profile)warns.push('沒有建立形狀基準，目前只用面積判斷，請特別注意覆核。');
   const offColor=S.comps.slice(1).filter(c=>!(c.border&&S.ignoreBorder)&&S.U&&c.area>=.5*S.U&&!colorOk(c)).length;
   if(offColor)warns.push('有 '+offColor+' 塊顏色和零件不同，沒有計算（灰色）。如果其實是零件，請點它修改數量。');
-  if(clusters)warns.push('有 '+clusters+' 區重疊或形狀不明；其中 '+S.autoIssues.length+' 區的面積估算與直線證據不同。請點橘色區域核對。完全遮蔽的零件無法由單張照片確認。');
+  if(clusters)warns.push('有 '+clusters+' 堆黏在一起，數字是估計的'+(unsure?'；其中 '+unsure+' 堆（圖上標「?」）可能差 1 顆以上，請優先點開自己數，或撥開再拍':'')+'。完全被壓住的零件，單張照片看不到。');
   const edgePart=c=>{if(!(c.border&&c.area>=.3*S.U&&c.area<=1.6*S.U&&colorOk(c)))return false;if(!S.profile)return true;geometry(c);return !!c.W&&c.W<=1.6*S.profile.W&&c.L<=1.2*S.profile.L;};   // 被邊緣切到的零件不會比一顆長
   if(S.ignoreBorder&&S.U&&S.comps.slice(1).some(edgePart))warns.push('照片邊緣有像零件的東西被排除（只拍到一部分），請把零件移離邊緣再拍，或查看原圖。');
   $('warn').innerHTML=warns.map(t=>'<p>'+t+'</p>').join('');$('warn').hidden=!warns.length;
@@ -692,9 +711,32 @@ function openSheet(id) {
   if (yOnScreen > limit) window.scrollBy({ top: yOnScreen - limit + 20, behavior: 'smooth' });
 }
 function hideSheet() { $('sheet').hidden = true; }
+// 點開一堆時，放大顯示那一堆；可以一根一根點記號來數
+function drawPile(){
+  const c=S.comps[S.selected],box=$('pileBox');
+  if(!c||!(c.cls==='cluster'||c.cls==='manual'||c.ratio>=SINGLE_MAX)){box.hidden=true;return;}
+  box.hidden=false;
+  const W=S.img.w,H=S.img.h,m=Math.round(Math.max(20,.25*Math.max(c.w,c.h)));
+  const x0=Math.max(0,c.x-m),y0=Math.max(0,c.y-m),x1=Math.min(W,c.x+c.w+m),y1=Math.min(H,c.y+c.h+m),cw=x1-x0,ch=y1-y0;
+  const k=Math.max(1,Math.min(6,900/Math.max(cw,ch)));S.pileView={x0,y0,cw,ch,k};
+  const tmp=document.createElement('canvas');tmp.width=cw;tmp.height=ch;const tctx=tmp.getContext('2d');
+  const id=tctx.createImageData(cw,ch),o=id.data,rgba=S.img.rgba,L=S.labels;
+  for(let y=0,q=0;y<ch;y++){let p=(y0+y)*W+x0;for(let x=0;x<cw;x++,p++,q+=4){const s=p*4,f=L[p]===c.id?0:.5;   // 不是這一堆的部分調淡
+    o[q]=rgba[s]+(255-rgba[s])*f;o[q+1]=rgba[s+1]+(255-rgba[s+1])*f;o[q+2]=rgba[s+2]+(255-rgba[s+2])*f;o[q+3]=255;}}
+  tctx.putImageData(id,0,0);
+  const cv2=$('pileCv');cv2.width=Math.round(cw*k);cv2.height=Math.round(ch*k);const ctx=cv2.getContext('2d');
+  ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,0,0,cv2.width,cv2.height);
+  const r=Math.max(9,(S.profile?S.profile.W:8)*k*.45),fs=Math.round(r*1.1);S.pileView.r=r;
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold '+fs+'px sans-serif';
+  S.marks.forEach((pt,i)=>{const X=(pt.x-x0)*k,Y=(pt.y-y0)*k;ctx.beginPath();ctx.arc(X,Y,r,0,Math.PI*2);ctx.fillStyle='rgba(37,99,235,.85)';ctx.fill();
+    ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#fff';ctx.fillText(String(i+1),X,Y+1);});
+  $('pileUse').textContent='用記號數量（'+S.marks.length+'）';$('pileUse').disabled=!S.marks.length;
+}
 function fillSheet() {
   const c = S.comps[S.selected];
   if (!c) return;
+  if (S.marksFor !== c.id) { S.marks = []; S.marksFor = c.id; }
+  drawPile();
   $('sheetCount').textContent = c.count;
   $('sheetTitle').textContent = c.cls === 'manual' ? '這一塊：手動設定 ' + c.count + ' 顆' : '這一塊：' + c.reason;
   $('sheetInfo').textContent = '面積 ' + c.area + ' 像素' + (S.U ? '（約一顆的 ' + c.ratio.toFixed(2) + ' 倍）' : '') +
@@ -768,6 +810,14 @@ $('refBtn').onclick=()=>{
  S.Umanual=true;S.overrides.set(c.id,1);classify();render();fillSheet();toast('已設定單顆基準');
 };
 $('closeSheetBtn').onclick=()=>{S.selected=null;hideSheet();render();};
+$('pileCv').addEventListener('click',e=>{
+  const v=S.pileView;if(!v||!S.selected)return;const cnv=e.currentTarget,r=cnv.getBoundingClientRect();
+  const x=v.x0+(e.clientX-r.left)*cnv.width/r.width/v.k,y=v.y0+(e.clientY-r.top)*cnv.height/r.height/v.k;
+  const tol=v.r/v.k,i=S.marks.findIndex(p=>Math.hypot(p.x-x,p.y-y)<tol);   // 只有點在記號圓點上才取消
+  if(i>=0)S.marks.splice(i,1);else S.marks.push({x,y});drawPile();
+});
+$('pileClear').onclick=()=>{S.marks=[];drawPile();};
+$('pileUse').onclick=()=>{const c=S.comps[S.selected];if(c&&S.marks.length){setOverride(c.id,S.marks.length);toast('這一堆改成 '+S.marks.length+' 顆');}};
 let thrTimer=null;
 $('thr').addEventListener('input',()=>{S.T=Number($('thr').value);S.manualT=true;updateThrUI();clearTimeout(thrTimer);thrTimer=setTimeout(rerunThreshold,300);});
 $('thrAuto').onclick=()=>{clearTimeout(thrTimer);S.T=S.autoT;S.manualT=false;updateThrUI();rerunThreshold();};
