@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.3</title>
+<title>零件拍照計數 V3.4</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -73,11 +73,14 @@
   .toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(17,24,39,.92); color: #fff;
     padding: 8px 14px; border-radius: 10px; font-size: 14px; z-index: 20; }
   [hidden] { display: none !important; }
+.ai-box{margin-top:8px;padding:8px;border:1px dashed #a855f7;border-radius:10px}
+.ai-box #aiOut{margin-top:4px;line-height:1.5}
+#sheetAi{color:#7e22ce;font-weight:600;margin-top:4px}
 </style>
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.3</h1>
+  <h1>零件拍照計數 V3.4</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -116,6 +119,11 @@
       <button id="undoBtn" class="btn small">復原上一步</button>
     </div>
     <div id="manualHint" class="warn" hidden>補入模式：點選照片中漏判的零件中心，每點一次增加 1 PCS。點藍色補入標記可刪除。再按一次按鈕結束。</div>
+    <div class="ai-box">
+      <div class="btnrow"><button id="aiBtn" class="btn">AI 複查（SAM 3）</button><button id="aiDotsBtn" class="btn small" hidden>隱藏 AI 標記</button></div>
+      <div id="aiOut" class="muted" hidden></div>
+      <div class="btnrow" id="aiActs" hidden><button id="aiNextBtn" class="btn small">下一個差異處</button><button id="aiApplyBtn" class="btn small">所有黏在一起的堆採用 AI 數量</button></div>
+    </div>
     <div class="btnrow"><button id="reviewBtn" class="btn">確認已人工覆核整張照片</button></div>
     <details style="margin-top:10px"><summary>測試紀錄（已知實際數量）</summary>
       <div class="field"><label for="truth">實際數量</label><input id="truth" type="number" min="0" step="1" inputmode="numeric"> PCS</div>
@@ -157,6 +165,14 @@
     <div class="field"><label><input id="ignBorder" type="checkbox" checked> 不計算碰到照片邊緣的東西（桌面、托盤、標籤）</label></div>
     <div class="field"><label>處理解析度</label>
       <select id="resSel"><option value="2000" selected>標準（建議）</option><option value="3000">高（零件很小時用，比較慢）</option></select></div>
+    <div class="field" style="display:block;border-top:1px solid #e5e7eb;padding-top:8px">
+      <b>AI 複查設定（Roboflow SAM 3）</b> <span id="rfState" class="muted"></span>
+      <div class="field"><label for="rfKey">API 金鑰</label><input id="rfKey" type="password" autocomplete="off" spellcheck="false" placeholder="貼上 Private API Key" style="flex:1;min-width:0"></div>
+      <div class="field"><label for="rfPrompt">要找的東西</label><input id="rfPrompt" value="gold pin" style="flex:1;min-width:0"></div>
+      <div class="field"><label for="rfThr">信心門檻</label><input id="rfThr" type="number" min="0.1" max="0.95" step="0.05" value="0.5" inputmode="decimal"></div>
+      <div class="btnrow"><button id="rfSave" class="btn small">存在這支手機</button><button id="rfForget" class="btn small">刪除金鑰</button></div>
+      <div class="muted">金鑰只存在這支手機的瀏覽器，不在網頁程式裡。按「AI 複查」時，這張照片會上傳到 Roboflow 辨識（每張約 0.0005 點數）。請用免費方案、不綁信用卡；金鑰外流時到 Roboflow 刪除即可。</div>
+    </div>
   </details>
 
   <details class="card">
@@ -183,7 +199,8 @@
     <div id="pileBox" class="pile-box" hidden>
       <canvas id="pileCv"></canvas>
       <div class="muted">放大圖：每根零件點一下做記號（再點一次取消），數完按下面的按鈕。</div>
-      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="pileClear" class="btn small">清除記號</button></div>
+      <div id="sheetAi" class="muted" hidden></div>
+      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="aiUseBtn" class="btn small" hidden>用 AI 數量</button><button id="pileClear" class="btn small">清除記號</button></div>
     </div>
     <div class="btnrow">
       <button id="refBtn" class="btn">設為「一顆」的基準</button>
@@ -386,7 +403,7 @@ function segment(T) {
       if(area>=minArea() && !(S.ignoreBorder&&c.border)) geometry(c);   // 兩種模式都做形狀判斷
     }
   }finally{mats.forEach(m=>{try{m.delete()}catch(e){}})}
-  S.appliedT=T;S.selected=null;S.lastPile=null;S.marks=[];S.marksFor=null; S.Umanual=false; hideSheet();   // 換照片或重算時，逐堆順序和記號都重來
+  S.appliedT=T;if(S.ai)aiMap();S.selected=null;S.lastPile=null;S.marks=[];S.marksFor=null; S.Umanual=false; hideSheet();   // 換照片或重算時，逐堆順序和記號都重來
 }
 // 使用各區塊的旋轉外接矩形，避免斜放零件長寬失真。
 function geometry(c){
@@ -589,13 +606,14 @@ function render() {
   if(!S.raw)S.manualParts.forEach((p,i)=>{
     const x=p.x-V.x,y=p.y-V.y;ctx.beginPath();ctx.arc(x,y,Math.max(5,fs*.65),0,Math.PI*2);ctx.fillStyle='#2563eb';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff';ctx.fillText('+'+(i+1),x,y);
   });
+  if(!S.raw&&S.ai&&S.aiShow)aiDraw(ctx,V.x,V.y,1,Math.max(3,fs*.3));
   // 選取中的區塊畫虛線框
   if (S.selected) {
     const c = S.comps[S.selected], pad = Math.max(4, fs / 3);
     ctx.save(); ctx.setLineDash([fs / 2, fs / 3]); ctx.lineWidth = Math.max(2, fs / 6); ctx.strokeStyle = '#1d4ed8';
     ctx.strokeRect(c.x - V.x - pad, c.y - V.y - pad, c.w + pad * 2, c.h + pad * 2); ctx.restore();
   }
-  updateSummary();
+  updateSummary();aiUI();
 }
 
 // 統計：單顆幾個、黏在一起幾堆（估計幾顆）、手動修改幾塊
@@ -659,7 +677,7 @@ function setBusy(b){S.busy=b;['camInput','fileInput','partMode','resSel','thr','
 /* ===== 主流程 ===== */
 async function processFile(file){
   if(S.busy)return;const job=++S.job,t0=performance.now();setBusy(true);$('resultCard').hidden=true;
-  S.labels=null;S.photoId=null;S.img=null;S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
+  S.labels=null;S.photoId=null;S.img=null;S.ai=null;aiUI();S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
   clearEdits();S.selected=null;hideSheet();$('truth').value='';
   try{
     setStatus('計算中…');await new Promise(r=>setTimeout(r,30));
@@ -744,6 +762,7 @@ function drawPile(){
   ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold '+fs+'px sans-serif';
   S.marks.forEach((pt,i)=>{const X=(pt.x-x0)*k,Y=(pt.y-y0)*k;ctx.beginPath();ctx.arc(X,Y,r,0,Math.PI*2);ctx.fillStyle='rgba(37,99,235,.85)';ctx.fill();
     ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#fff';ctx.fillText(String(i+1),X,Y+1);});
+  if(S.ai&&S.aiShow)aiDraw(ctx,x0,y0,k,Math.max(3,r*.35),c.id);
   $('pileUse').textContent='用記號數量（'+S.marks.length+'）';$('pileUse').disabled=!S.marks.length;
 }
 function fillSheet() {
@@ -756,6 +775,9 @@ function fillSheet() {
   $('sheetInfo').textContent = '面積 ' + c.area + ' 像素' + (S.U ? '（約一顆的 ' + c.ratio.toFixed(2) + ' 倍）' : '') +
     (c.cls === 'manual' ? '・自動判斷是 ' + c.auto + ' 顆' : '');
   $('refBtn').disabled = c.area < minArea() || (S.ignoreBorder&&c.border);
+  const an=S.ai?(S.ai.per.get(c.id)||0):null;
+  $('sheetAi').hidden=an===null;$('aiUseBtn').hidden=an===null||an===c.count;
+  if(an!==null){$('sheetAi').textContent='AI 認為這塊有 '+an+' 顆'+(an===c.count?'（和目前一樣）':'（目前 '+c.count+' 顆）');$('aiUseBtn').textContent='用 AI 數量（'+an+'）';}
 }
 function setOverride(id, n) {
   pushUndo();invalidate();S.overrides.set(id, Math.max(0, Math.trunc(n))); classify(); render(); fillSheet();
@@ -784,6 +806,108 @@ function updateTest(){const v=$('truth').value,n=Number(v);$('testOut').textCont
 function loadTests(){try{const a=JSON.parse(localStorage.getItem(TEST_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}}
 function downloadBlob(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 
+
+/* ===== AI 複查（Roboflow SAM 3）===== */
+// 金鑰只存在這支手機的 localStorage，不寫進程式碼。
+const RF_KEY='partcount.rf.v1', RF_URL='https://serverless.roboflow.com/sam3/concept_segment', RF_MAX=1600;
+function rfLoad(){try{const o=JSON.parse(localStorage.getItem(RF_KEY)||'{}');return o&&typeof o==='object'?o:{};}catch(e){return {};}}
+function rfShow(){const o=rfLoad();$('rfKey').value=o.key||'';$('rfPrompt').value=o.prompt||'gold pin';$('rfThr').value=o.thr||0.5;$('rfState').textContent=o.key?'（已設定金鑰）':'（尚未設定金鑰）';}
+function rfSave(){const key=$('rfKey').value.trim(),prompt=$('rfPrompt').value.trim()||'gold pin';let thr=Number($('rfThr').value);if(!(thr>0&&thr<1))thr=0.5;
+  try{localStorage.setItem(RF_KEY,JSON.stringify({key,prompt,thr}));toast(key?'已存在這支手機':'已儲存（沒有金鑰）');}catch(e){toast('儲存失敗：瀏覽器儲存空間不可用');}rfShow();}
+// 把各種可能的多邊形格式轉成 [[x,y],...]
+function normPoly(a){
+  if(!Array.isArray(a)||!a.length)return null;
+  if(typeof a[0]==='number'){const o=[];for(let i=0;i+1<a.length;i+=2)o.push([a[i],a[i+1]]);return o.length>=3?o:null;}
+  if(Array.isArray(a[0])&&typeof a[0][0]==='number')return a.length>=3?a.map(q=>[+q[0],+q[1]]):null;
+  if(a[0]&&typeof a[0]==='object'&&'x' in a[0])return a.length>=3?a.map(q=>[+q.x,+q.y]):null;
+  return null;
+}
+function polysOf(p){
+  const out=[],add=v=>{if(!v)return;const one=normPoly(v);if(one){out.push(one);return;}if(Array.isArray(v))v.forEach(q=>{const n=normPoly(q);if(n)out.push(n);});};
+  add(p.points);add(p.polygon);add(p.polygons);add(p.masks);add(p.mask);if(p.segmentation)add(p.segmentation);
+  return out;
+}
+function polyCentroid(P){let a=0,cx=0,cy=0;for(let i=0,j=P.length-1;i<P.length;j=i++){const f=P[j][0]*P[i][1]-P[i][0]*P[j][1];a+=f;cx+=(P[j][0]+P[i][0])*f;cy+=(P[j][1]+P[i][1])*f;}
+  if(Math.abs(a)<1e-6){let sx=0,sy=0;P.forEach(q=>{sx+=q[0];sy+=q[1];});return{x:sx/P.length,y:sy/P.length,a:0};}return{x:cx/(3*a),y:cy/(3*a),a:Math.abs(a/2)};}
+// 解析回應：找出每個實例的中心點（s = 上傳時的縮放比例）
+function aiParse(j,s){
+  let preds=[];
+  if(j&&Array.isArray(j.prompt_results))j.prompt_results.forEach(r=>{if(r&&Array.isArray(r.predictions))preds.push(...r.predictions);});
+  else if(j&&Array.isArray(j.predictions))preds=j.predictions;
+  else if(Array.isArray(j))preds=j;
+  const pts=[];
+  for(const p of preds){if(!p||typeof p!=='object')continue;
+    const polys=polysOf(p);let x=null,y=null;
+    if(polys.length){let best=null;polys.forEach(P=>{const c=polyCentroid(P);if(!best||c.a>best.a)best=c;});x=best.x;y=best.y;}
+    else if(Number.isFinite(p.x)&&Number.isFinite(p.y)){x=p.x;y=p.y;}   // 偵測框格式：x,y 是框的中心
+    else if(p.box||p.bbox){const b=p.box||p.bbox;if(Array.isArray(b)&&b.length>=4){x=(b[0]+b[2])/2;y=(b[1]+b[3])/2;}else if(b&&Number.isFinite(b.x0)){x=(b.x0+b.x1)/2;y=(b.y0+b.y1)/2;}}
+    if(x===null||!Number.isFinite(x)||!Number.isFinite(y))continue;
+    pts.push({x:x/s,y:y/s,conf:Number(p.confidence??p.score??0),polys:polys.map(P=>P.map(q=>[q[0]/s,q[1]/s]))});
+  }
+  return{pts,raw:preds.length};
+}
+// 每個 AI 實例落在哪一塊（中心點附近找最近的零件像素）
+function aiMap(){
+  const A=S.ai;if(!A||!S.labels)return;const W=S.img.w,H=S.img.h,L=S.labels,R=Math.max(3,Math.round(S.profile?S.profile.W*.6:5));
+  A.per=new Map();A.outside=0;
+  for(const p of A.pts){const px=Math.round(p.x),py=Math.round(p.y);let id=0,bd=1e9;
+    for(let dy=-R;dy<=R&&!(bd===0);dy++)for(let dx=-R;dx<=R;dx++){const x=px+dx,y=py+dy;if(x<0||y<0||x>=W||y>=H)continue;const l=L[y*W+x];if(l){const d=dx*dx+dy*dy;if(d<bd){bd=d;id=l;}}}
+    p.comp=id;if(id&&!(S.ignoreBorder&&S.comps[id]&&S.comps[id].border))A.per.set(id,(A.per.get(id)||0)+1);else A.outside++;}
+}
+function aiDiffs(){
+  if(!S.ai)return[];const ids=new Set([...S.ai.per.keys()]);
+  S.comps.slice(1).forEach(c=>{if(c.count>0)ids.add(c.id);});
+  return [...ids].filter(id=>{const c=S.comps[id];return c&&(S.ai.per.get(id)||0)!==c.count;}).sort((a,b)=>S.comps[b].area-S.comps[a].area);
+}
+function aiUI(){
+  const A=S.ai,has=!!(A&&S.img);$('aiOut').hidden=!has;$('aiActs').hidden=!has;$('aiDotsBtn').hidden=!has;
+  if(!has)return;
+  const d=aiDiffs(),pileD=d.filter(id=>S.comps[id].cls!=='single'||(A.per.get(id)||0)>1);
+  let t='AI 找到 <b>'+A.pts.length+'</b> 顆；本頁目前 <b>'+S.total+'</b> 顆。';
+  if(!d.length&&!A.outside)t+='<br>每一塊的數量都一致 ✓';
+  else{t+='<br>'+d.length+' 塊數量不同'+(A.outside?'；另有 '+A.outside+' 顆 AI 標記不在任何一塊上（可能是漏判，可用「補入漏判」）':'')+'。';}
+  t+='<br><span class="muted">紫色圈是 AI 找到的零件。AI 也會錯，請看過再採用；不會自動改數字。</span>';
+  $('aiOut').innerHTML=t;$('aiNextBtn').disabled=!d.length;$('aiApplyBtn').disabled=!pileD.some(id=>S.comps[id].cls!=='single');
+}
+function aiDraw(ctx,ox,oy,k,r,onlyId){
+  ctx.save();ctx.lineWidth=Math.max(1.5,r*.35);ctx.strokeStyle='#a855f7';
+  for(const p of S.ai.pts){if(onlyId&&p.comp!==onlyId)continue;
+    if(onlyId&&p.polys.length){p.polys.forEach(P=>{ctx.beginPath();P.forEach((q,i)=>{const X=(q[0]-ox)*k,Y=(q[1]-oy)*k;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.closePath();ctx.stroke();});}
+    ctx.beginPath();ctx.arc((p.x-ox)*k,(p.y-oy)*k,r,0,Math.PI*2);ctx.stroke();}
+  ctx.restore();
+}
+function jpegB64(maxSide){
+  const W=S.img.w,H=S.img.h,s=Math.min(1,maxSide/Math.max(W,H));
+  const a=document.createElement('canvas');a.width=W;a.height=H;a.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.img.rgba),W,H),0,0);
+  const b=document.createElement('canvas');b.width=Math.round(W*s);b.height=Math.round(H*s);const g=b.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(a,0,0,b.width,b.height);
+  return{b64:b.toDataURL('image/jpeg',0.92).split(',')[1],s:b.width/W};
+}
+async function rfPost(body,key,useQuery){
+  const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),90000);
+  try{const url=useQuery?RF_URL+'?api_key='+encodeURIComponent(key):RF_URL,h={'Content-Type':'application/json'};if(!useQuery)h.Authorization='Bearer '+key;
+    return await fetch(url,{method:'POST',headers:h,body,signal:ctl.signal});}finally{clearTimeout(tm);}
+}
+async function aiRun(){
+  if(!S.img||S.busy||S.aiBusy)return;const o=rfLoad();
+  if(!o.key){$('advCard').open=true;$('rfKey').focus();toast('請先在「進階設定」貼上 Roboflow 金鑰');return;}
+  if(!rfLoad().ok&&!confirm('這張照片會上傳到 Roboflow 做 AI 辨識。公司允許上傳嗎？（只問一次）'))return;
+  try{localStorage.setItem(RF_KEY,JSON.stringify({...o,ok:1}));}catch(e){}
+  S.aiBusy=true;const btn=$('aiBtn');btn.disabled=true;btn.textContent='AI 辨識中…（約 5–30 秒）';const img=S.img,t0=performance.now();
+  try{
+    const {b64,s}=jpegB64(RF_MAX);
+    const body=JSON.stringify({image:{type:'base64',value:b64},prompts:[{type:'text',text:o.prompt||'gold pin'}],output_prob_thresh:o.thr||0.5,format:'polygon'});
+    let res;try{res=await rfPost(body,o.key,false);}catch(e){if(e.name==='AbortError')throw e;res=await rfPost(body,o.key,true);}   // 標頭被擋時改用網址帶金鑰
+    const txt=await res.text();let j=null;try{j=JSON.parse(txt);}catch(e){}
+    if(!res.ok){const m=(j&&(j.message||j.error||j.detail))||txt.slice(0,120);
+      throw new Error(res.status===401||res.status===403?'金鑰錯誤或沒有權限（'+res.status+'）':res.status===402||/credit|quota|limit/i.test(m)?'點數用完或超過用量（'+res.status+'）':'Roboflow 回應錯誤 '+res.status+'：'+m);}
+    if(img!==S.img)return;   // 期間換了照片
+    const P=aiParse(j,s);if(!P.raw&&!(j&&(j.prompt_results||j.predictions)))throw new Error('看不懂 Roboflow 的回應格式');
+    S.ai={pts:P.pts,per:new Map(),outside:0,ms:performance.now()-t0,raw:j};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();render();
+    toast('AI 完成：'+P.pts.length+' 顆（'+(S.ai.ms/1000).toFixed(1)+' 秒）');
+  }catch(e){console.error(e);alert('AI 複查失敗：'+(e.name==='AbortError'?'等太久沒有回應，請檢查網路後再試':e.message||e)+(e instanceof TypeError?'\n（可能是網路不通，或瀏覽器擋下連線）':''));}
+  finally{S.aiBusy=false;btn.disabled=false;btn.textContent='AI 複查（SAM 3）';}
+}
+
 /* ===== 小提示 ===== */
 let toastTimer = null;
 function toast(msg) {
@@ -795,6 +919,18 @@ function toast(msg) {
 
 /* ===== 綁定按鈕 ===== */
 
+
+$('rfSave').onclick=rfSave;
+$('rfForget').onclick=()=>{try{localStorage.removeItem(RF_KEY);}catch(e){}rfShow();toast('已刪除這支手機上的金鑰');};
+$('aiBtn').onclick=aiRun;
+$('aiDotsBtn').onclick=()=>{S.aiShow=!S.aiShow;$('aiDotsBtn').textContent=S.aiShow?'隱藏 AI 標記':'顯示 AI 標記';render();if(S.selected)drawPile();};
+$('aiNextBtn').onclick=()=>{const d=aiDiffs();if(!d.length)return;const i=d.indexOf(S.selected);openSheet(d[(i+1)%d.length]);};
+$('aiApplyBtn').onclick=()=>{if(!S.ai)return;const ids=aiDiffs().filter(id=>S.comps[id].cls!=='single'&&(S.ai.per.get(id)||0)>0);
+  if(!ids.length){toast('沒有需要改的堆');return;}
+  if(!confirm('把 '+ids.length+' 堆改成 AI 的數量？（單顆和 AI 沒找到的不改；可按「復原上一步」）'))return;
+  pushUndo();invalidate();ids.forEach(id=>S.overrides.set(id,S.ai.per.get(id)));classify();render();if(S.selected)fillSheet();toast('已採用 '+ids.length+' 堆');};
+$('aiUseBtn').onclick=()=>{const c=S.comps[S.selected];if(c&&S.ai)setOverride(c.id,S.ai.per.get(c.id)||0);};
+rfShow();
 $('camInput').addEventListener('change',onFilePicked);$('fileInput').addEventListener('change',onFilePicked);
 $('view').addEventListener('click',e=>{
   if(!S.labels||S.busy)return;const r=e.currentTarget.getBoundingClientRect(),V=S.view;
@@ -850,7 +986,7 @@ $('addBtn').onclick=()=>{
 };
 $('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
 $('truth').oninput=updateTest;
-$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.3',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.4',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
 $('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
