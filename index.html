@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數</title>
+<title>零件拍照計數 V3.0</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -74,8 +74,8 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數</h1>
-  <p class="sub">拍一張照片，自動數零件。照片只在手機上計算，不會上傳。</p>
+  <h1>零件拍照計數 V3.0</h1>
+  <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
 <main>
@@ -86,10 +86,12 @@
       <label class="btn primary">📷 拍照<input id="camInput" type="file" accept="image/*" capture="environment" hidden></label>
       <label class="btn">🖼️ 選照片<input id="fileInput" type="file" accept="image/*" hidden></label>
     </div>
+    <div class="field"><label for="partMode">辨識模式</label><select id="partMode"><option value="auto" selected>自動判斷（建議）</option><option value="pin">金色零件（用顏色）</option><option value="general">通用（銀色、其他顏色、底光板）</option></select></div>
+    <div class="muted">自動判斷：金色零件用顏色辨識，不受陰影影響；銀色、其他顏色或用底光板時，改用亮度差異。</div>
   </section>
 
   <section id="resultCard" class="card" hidden>
-    <div id="totalBox" class="total"><span id="totalNum">0</span><small>顆</small></div>
+    <div id="totalBox" class="total"><span id="totalNum">0</span><small>PCS</small></div>
     <div id="badge" class="badge" hidden></div>
     <div id="summary" class="summary"></div>
     <div id="info" class="muted"></div>
@@ -99,10 +101,23 @@
       <span><i class="sw b"></i>手動修改</span><span><i class="sw x"></i>不計</span>
     </div>
     <div class="field" style="justify-content:space-between;margin:4px 0 0">
-      <span class="muted">點圖上的任何一塊，可以修改數量。</span>
-      <button id="viewBtn" class="btn small">看整張照片</button>
+      <span class="muted">點區塊修正；橘色為待覆核，藍色為人工修正。</span>
+      <button id="viewBtn" class="btn small">放大零件區</button>
     </div>
     <canvas id="view"></canvas>
+    <div class="btnrow">
+      <button id="rawBtn" class="btn small">顯示原圖</button>
+      <button id="numBtn" class="btn small">隱藏編號</button>
+      <button id="manualBtn" class="btn small">＋ 補入漏判</button>
+      <button id="undoBtn" class="btn small">復原上一步</button>
+    </div>
+    <div id="manualHint" class="warn" hidden>補入模式：點選照片中漏判的零件中心，每點一次增加 1 PCS。點藍色補入標記可刪除。再按一次按鈕結束。</div>
+    <div class="btnrow"><button id="reviewBtn" class="btn">確認已人工覆核整張照片</button></div>
+    <details style="margin-top:10px"><summary>測試紀錄（已知實際數量）</summary>
+      <div class="field"><label for="truth">實際數量</label><input id="truth" type="number" min="0" step="1" inputmode="numeric"> PCS</div>
+      <div id="testOut" class="calc-out">輸入實際清點數量，即可比較誤差。</div>
+      <div class="btnrow"><button id="testSave" class="btn small">保存本次測試</button><button id="testExport" class="btn small">下載測試 CSV</button></div>
+    </details>
     <div class="btnrow">
       <button id="addBtn" class="btn primary">＋ 加入累計</button>
       <button id="saveBtn" class="btn">下載標示圖</button>
@@ -112,16 +127,18 @@
   <section class="card">
     <h2>累計（多張照片加總）</h2>
     <ol id="accList"></ol>
-    <div class="acc-total">合計 <b id="accTotal">0</b> 顆 <span id="accNote"></span></div>
+    <div class="acc-total">合計 <b id="accTotal">0</b> PCS <span id="accNote"></span></div>
     <button id="accClear" class="btn small">清除累計</button>
   </section>
 
   <details class="card" id="calcCard">
     <summary>換算整袋數量（秤重）</summary>
-    <div class="field"><label>樣本數量</label><input id="cSample" type="number" min="0" inputmode="numeric"> 顆
+    <div class="field"><label>樣本數量</label><input id="cSample" type="number" min="0" inputmode="numeric"> PCS
       <button id="useAcc" class="btn small">帶入累計</button><button id="useCur" class="btn small">帶入這張</button></div>
     <div class="field"><label>樣本重量</label><input id="cSampleW" type="number" min="0" step="any" inputmode="decimal"> g</div>
     <div class="field"><label>整袋重量</label><input id="cBagW" type="number" min="0" step="any" inputmode="decimal"> g</div>
+    <div class="field"><label>樣本容器皮重</label><input id="cSampleTare" type="number" min="0" step="any" value="0"> g</div>
+    <div class="field"><label>整袋容器皮重</label><input id="cBagTare" type="number" min="0" step="any" value="0"> g</div>
     <div id="calcOut" class="calc-out">填入三個數字就會算出結果。</div>
   </details>
 
@@ -131,7 +148,7 @@
       <div>門檻值：<b id="thrVal">-</b> <span id="thrMode" class="muted"></span>
         <button id="thrAuto" class="btn small" style="margin-left:6px">自動</button></div>
       <input id="thr" type="range" min="5" max="200" step="1" value="40">
-      <div class="muted">數字小：比較敏感，淡色的零件也抓得到，但可能把陰影、髒點算進去。數字大：比較嚴格。調整後，手動修改會清除。</div>
+      <div class="muted">數字小：比較敏感，淡色的零件也抓得到，但可能把陰影、髒點算進去。數字大：比較嚴格。調整前若有人工修改，會先詢問是否清除；已累計紀錄不會自動覆寫。</div>
     </div>
     <div class="field"><label><input id="ignBorder" type="checkbox" checked> 不計算碰到照片邊緣的東西（桌面、托盤、標籤）</label></div>
     <div class="field"><label>處理解析度</label>
@@ -141,10 +158,10 @@
   <details class="card">
     <summary>拍照小技巧（數得準的關鍵）</summary>
     <ul class="tips">
-      <li><b>零件要鋪開、不要互相碰到。</b>分開的零件是一顆一顆精準計數；黏在一起的只能用面積估計，可能有誤差。</li>
+      <li><b>零件要鋪開、不要互相碰到。</b>分開的零件較容易辨識；重疊區以面積估算及直線交叉比對，仍可能有誤差。</li>
       <li>背景用白紙或底光板，畫面裡只拍背景和零件，不要拍到桌子、標籤。</li>
       <li>手機從正上方拍，零件不要碰到照片邊緣（碰到邊緣的會被跳過）。</li>
-      <li>光線均勻，避免手機或手的影子。用底光板最穩定。</li>
+      <li>光線均勻，避免手機或手的影子。不一定要底光板，白紙＋均勻光線就可以。</li>
       <li>一張放幾十到一兩百顆最好。數量多就分幾張拍，每張按「加入累計」。</li>
       <li>拍完看一下標示圖：綠色是單顆，橘色是黏在一起的估計值，點一下可以改成正確數量。</li>
     </ul>
@@ -182,7 +199,10 @@ const MIN_THRESHOLD = 15;   // 自動門檻的下限，避免把紙張紋路當�
 const BG_KERNEL_FRAC = 12;  // 背景估計範圍：照片長邊的 1/12
 const SINGLE_MAX = 1.5;     // 面積小於「一顆」的 1.5 倍 → 算 1 顆
 const NOISE_MAX = 0.4;      // 面積小於「一顆」的 0.4 倍 → 當成雜點不算
-const ACC_KEY = 'partcount.acc.v1';
+const WARM_MIN = 0.35;      // 自動判斷：零件區域的暖色像素超過這個比例，就當成金色零件
+const COLOR_TOL_MIN = 45;   // 顏色容許差異的下限（超過就當成不是零件）
+const ACC_KEY = 'partcount.acc.v1'; // 相容原版累計
+const TEST_KEY = 'partcount.tests.v2';
 
 /* ===== 狀態 ===== */
 const S = {
@@ -195,9 +215,13 @@ const S = {
   U: null, Umanual: false, refCount: 0,   // U = 一顆零件的面積（像素）
   overrides: new Map(), // 手動修改：塊編號 → 顆數
   selected: null, ignoreBorder: true, maxDim: 2000,
-  view: null, fullView: false,  // 畫面顯示範圍（預設放大到有零件的區域）
+  view: null, fullView: true,  // 畫面顯示範圍（預設放大到有零件的區域）
   acc: [], accIndex: null, total: 0,
-  accSum: 0, accEst: 0, calcEst: 0   // 累計合計、其中估計的數量、換算用的樣本裡估計的數量
+  accSum: 0, accEst: 0, calcEst: 0,
+  mode:'auto', useMode:'pin', autoReason:'', showNums:true, refColor:null, colorTol:null,
+  chroma:null, warm:null, profile:null, manualParts:[], undo:[],
+  addMode:false, raw:false, reviewed:false, busy:false, job:0, photoId:null,
+  elapsed:0, initialTotal:0, calcUnreviewed:false, accUnreviewed:false, autoIssues:[], tests:[]
 };
 const $ = (id) => document.getElementById(id);
 
@@ -296,31 +320,111 @@ function computeDiff(imgData) {
     const diff = new cv.Mat(); cv.max(c0, c1, diff); cv.max(diff, c2, diff); // 取 R/G/B 三色中差最多的
     const tmp = M(new cv.Mat());
     const otsu = cv.threshold(diff, tmp, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU); // 自動找門檻
-    return { diff, otsu };
+    // 金色針腳：紅藍差異扣除局部背景色偏，降低灰紙陰影的影響。
+    const bd=blur.data, gd=bg.data, chroma=new Int16Array(w*h), warm=new Int16Array(w*h);
+    for(let i=0,j=0;i<chroma.length;i++,j+=3){
+      warm[i]=bd[j]-bd[j+2]; chroma[i]=warm[i]-(gd[j]-gd[j+2]);
+    }
+    return { diff, otsu, chroma, warm };
   } finally { mats.forEach((m) => { try { m.delete(); } catch (e) {} }); }
+}
+
+// 自動判斷：看零件區域裡「偏暖色（金色）」像素的比例，決定用顏色還是亮度差異
+function decideMode(T){
+  if(S.mode!=='auto'){S.useMode=S.mode;S.autoReason='';return;}
+  const w=S.img.w,h=S.img.h,mats=[];const M=m=>(mats.push(m),m);
+  try{
+    const mask=M(new cv.Mat());cv.threshold(S.diff,mask,T,255,cv.THRESH_BINARY);
+    const labels=M(new cv.Mat()),stats=M(new cv.Mat()),cents=M(new cv.Mat());
+    const n=cv.connectedComponentsWithStats(mask,labels,stats,cents,8,cv.CV_32S);
+    const st=stats.data32S,L=labels.data32S,mA=minArea(),ok=new Uint8Array(n);
+    for(let i=1;i<n;i++){const x=st[i*5],y=st[i*5+1],bw=st[i*5+2],bh=st[i*5+3];ok[i]=st[i*5+4]>=mA&&x>0&&y>0&&x+bw<w&&y+bh<h?1:0;}
+    const ct=Math.max(8,Math.round(T*.4));let tot=0,warm=0;
+    for(let p=0;p<L.length;p++){const l=L[p];if(l&&ok[l]){tot++;if(S.chroma[p]>ct&&S.warm[p]>10)warm++;}}
+    const frac=tot?warm/tot:0;
+    S.warmFrac=frac;S.useMode=frac>=WARM_MIN?'pin':'general';
+    S.autoReason='自動判斷，暖色比例 '+Math.round(frac*100)+'%';
+  }finally{mats.forEach(m=>{try{m.delete()}catch(e){}})}
 }
 
 // 第二步：用門檻切出零件，找出一塊一塊的區域
 function segment(T) {
-  const w = S.img.w, h = S.img.h, mats = [];
-  const M = (m) => { mats.push(m); return m; };
+  const w=S.img.w,h=S.img.h,mats=[]; const M=m=>(mats.push(m),m);
   try {
-    const mask = M(new cv.Mat()); cv.threshold(S.diff, mask, T, 255, cv.THRESH_BINARY);
-    const ker = M(cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3)));
-    cv.morphologyEx(mask, mask, cv.MORPH_OPEN, ker);   // 去掉小雜點
-    cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, ker);  // 補小破洞
-    const labels = M(new cv.Mat()), stats = M(new cv.Mat()), cents = M(new cv.Mat());
-    const n = cv.connectedComponentsWithStats(mask, labels, stats, cents, 8, cv.CV_32S);
-    S.labels = new Int32Array(labels.data32S);
-    const st = stats.data32S, ce = cents.data64F;
-    S.comps = [null];
-    for (let i = 1; i < n; i++) {
-      const x = st[i * 5], y = st[i * 5 + 1], bw = st[i * 5 + 2], bh = st[i * 5 + 3], area = st[i * 5 + 4];
-      S.comps.push({ id: i, x, y, w: bw, h: bh, area, cx: ce[i * 2], cy: ce[i * 2 + 1],
-        border: x <= 0 || y <= 0 || x + bw >= w || y + bh >= h });
+    const mask=M(new cv.Mat(h,w,cv.CV_8UC1));
+    if(S.useMode==='pin'){
+      const ct=Math.max(8,Math.round(T*.4)), d=mask.data;
+      for(let i=0;i<d.length;i++)d[i]=S.chroma[i]>ct && S.warm[i]>10 ? 255:0;
+    }else cv.threshold(S.diff,mask,T,255,cv.THRESH_BINARY);
+    const ker=M(cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(3,3)));
+    cv.morphologyEx(mask,mask,cv.MORPH_OPEN,ker);
+    cv.morphologyEx(mask,mask,cv.MORPH_CLOSE,ker);
+    const labels=M(new cv.Mat()),stats=M(new cv.Mat()),cents=M(new cv.Mat());
+    const n=cv.connectedComponentsWithStats(mask,labels,stats,cents,8,cv.CV_32S);
+    S.labels=new Int32Array(labels.data32S); const st=stats.data32S,ce=cents.data64F;
+    // 每一塊的平均顏色：用來排除桌面、標籤、手這類顏色和零件不同的東西
+    const sum=new Float64Array(n*3),rgba=S.img.rgba,Lb=S.labels;
+    for(let p=0,q=0;p<Lb.length;p++,q+=4){const l=Lb[p];if(l){const k=l*3;sum[k]+=rgba[q];sum[k+1]+=rgba[q+1];sum[k+2]+=rgba[q+2];}}
+    S.comps=[null];
+    for(let i=1;i<n;i++){
+      const x=st[i*5],y=st[i*5+1],bw=st[i*5+2],bh=st[i*5+3],area=st[i*5+4];
+      const c={id:i,x,y,w:bw,h:bh,area,cx:ce[i*2],cy:ce[i*2+1],border:x<=0||y<=0||x+bw>=w||y+bh>=h,
+        mr:sum[i*3]/area,mg:sum[i*3+1]/area,mb:sum[i*3+2]/area};
+      S.comps.push(c);
+      if(area>=minArea() && !(S.ignoreBorder&&c.border)) geometry(c);   // 兩種模式都做形狀判斷
     }
-  } finally { mats.forEach((m) => { try { m.delete(); } catch (e) {} }); }
-  S.overrides.clear(); S.selected = null; S.Umanual = false; hideSheet();
+  }finally{mats.forEach(m=>{try{m.delete()}catch(e){}})}
+  S.appliedT=T;S.selected=null; S.Umanual=false; hideSheet();
+}
+// 使用各區塊的旋轉外接矩形，避免斜放零件長寬失真。
+function geometry(c){
+  if(c.L)return;
+  const pts=[]; const W=S.img.w;
+  // 只需輪廓邊界點，避免大量像素傳入 WASM。
+  for(let y=c.y;y<c.y+c.h;y++)for(let x=c.x;x<c.x+c.w;x++){
+    const p=y*W+x;if(S.labels[p]!==c.id)continue;
+    if(x===c.x||x===c.x+c.w-1||y===c.y||y===c.y+c.h-1||S.labels[p-1]!==c.id||S.labels[p+1]!==c.id||S.labels[p-W]!==c.id||S.labels[p+W]!==c.id)pts.push(x-c.x,y-c.y);
+  }
+  let mat=null;
+  try{
+    if(pts.length<6)return;
+    mat=cv.matFromArray(pts.length/2,1,cv.CV_32FC2,pts);
+    const r=cv.minAreaRect(mat);c.L=Math.max(r.size.width,r.size.height)+1;c.W=Math.min(r.size.width,r.size.height)+1;
+    c.aspect=c.L/c.W;c.fill=c.area/(c.L*c.W);c.angle=r.angle+(r.size.height>r.size.width?90:0);
+  }finally{if(mat)mat.delete();}
+}
+function closeProfile(c,p){return c.L/p.L>=.77&&c.L/p.L<=1.3&&c.W/p.W>=.65&&c.W/p.W<=1.5&&c.area/p.area>=.6&&c.area/p.area<=1.55;}
+function setProfile(refs){
+  S.U=median(refs.map(c=>c.area));S.refCount=refs.length;
+  S.profile={L:median(refs.map(c=>c.L)),W:median(refs.map(c=>c.W)),area:S.U};
+  setRefColor(refs);
+}
+// 零件的標準顏色＝基準零件平均顏色的中位數；容許範圍依基準零件彼此的差異決定
+function setRefColor(refs){
+  if(!refs.length){S.refColor=null;return;}
+  S.refColor={r:median(refs.map(c=>c.mr)),g:median(refs.map(c=>c.mg)),b:median(refs.map(c=>c.mb))};
+  S.colorTol=Math.max(COLOR_TOL_MIN,4*median(refs.map(c=>colorDist(c))));
+}
+function colorDist(c){const r=S.refColor;return r?Math.hypot(c.mr-r.r,c.mg-r.g,c.mb-r.b):0;}
+function colorOk(c){return !S.refColor||colorDist(c)<=S.colorTol*(S.U&&c.area>SINGLE_MAX*S.U?1.5:1);}
+// 直線證據只作覆核提示，不能將線條數視為真實件數。
+function lineEvidence(c){
+  if(!S.profile||c.area>400*S.U||c.w*c.h>1800000)return null;
+  const L=S.profile.L,W=S.profile.W, key=L.toFixed(2)+'/'+W.toFixed(2);
+  if(c.lineKey===key)return c.lineCount;
+  const mats=[];const M=m=>(mats.push(m),m);
+  try{
+    const h=c.h+4,w=c.w+4,roi=M(new cv.Mat(h,w,cv.CV_8UC1)), data=roi.data;data.fill(0);
+    for(let y=0;y<c.h;y++)for(let x=0;x<c.w;x++)if(S.labels[(c.y+y)*S.img.w+c.x+x]===c.id)data[(y+2)*w+x+2]=255;
+    const dist=M(new cv.Mat());cv.distanceTransform(roi,dist,cv.DIST_L2,3);
+    const core=M(new cv.Mat(h,w,cv.CV_8UC1));for(let i=0;i<w*h;i++)core.data[i]=dist.data32F[i]>=.30*W?255:0;
+    const lines=M(new cv.Mat());cv.HoughLinesP(core,lines,1,Math.PI/180,Math.max(10,Math.round(.38*L)),Math.max(3,Math.round(.65*L)),Math.round(.18*L));
+    const a=lines.data32S,all=[];
+    for(let i=0;i+3<a.length;i+=4){const dx=a[i+2]-a[i],dy=a[i+3]-a[i+1],len=Math.hypot(dx,dy);if(len<.60*L||len>1.4*L)continue;all.push({len,ux:dx/len,uy:dy/len,x:(a[i]+a[i+2])/2,y:(a[i+1]+a[i+3])/2});}
+    const kept=[];all.sort((a,b)=>b.len-a.len);
+    for(const q of all){if(kept.some(k=>{const dx=q.x-k.x,dy=q.y-k.y;return Math.abs(q.ux*k.ux+q.uy*k.uy)>Math.cos(13*Math.PI/180)&&Math.abs(k.ux*dy-k.uy*dx)<.75*W&&Math.abs(k.ux*dx+k.uy*dy)<.65*L;}))continue;kept.push(q);}
+    c.lineKey=key;c.lineCount=kept.length;return c.lineCount;
+  }catch(e){console.warn('直線比對不可用',e);c.lineKey=key;c.lineCount=null;return null;}finally{mats.forEach(m=>m.delete());}
 }
 
 /* ===== 計數邏輯 ===== */
@@ -330,6 +434,18 @@ function median(arr) { const a = arr.slice().sort((p, q) => p - q); const m = a.
 // 自動估計「一顆零件」的面積：找出最常見的大小
 function estimateUnit() {
   const mA = minArea();
+  S.profile=null;S.refColor=null;
+  {
+    // 找出「形狀、大小最常見」的一群當單顆基準（兩種模式都用；大的東西權重較高，避免被小雜點帶走）
+    const cand=S.comps.slice(1).filter(c=>c.area>=mA&&!(S.ignoreBorder&&c.border));
+    cand.forEach(geometry);
+    const refs=cand.filter(c=>c.L&&c.fill>=.5);
+    let best=null,bestScore=-1;
+    for(const c of refs){let score=0;for(const q of refs)if(closeProfile(q,c))score+=Math.sqrt(q.area);if(score>bestScore||(score===bestScore&&best&&c.area>best.area)){best=c;bestScore=score;}}
+    const group=best?refs.filter(q=>closeProfile(q,best)):[];
+    if(group.length>=2){setProfile(group);return;}
+    // 沒有足夠的單顆樣本時，退回面積法並提醒覆核。
+  }
   const areas = [];
   for (let i = 1; i < S.comps.length; i++) {
     const c = S.comps[i];
@@ -357,26 +473,31 @@ function estimateUnit() {
   }
   S.U = U;
   S.refCount = areas.filter((a) => a >= 0.6 * U && a <= SINGLE_MAX * U).length;
+  setRefColor(S.comps.slice(1).filter(c=>c.area>=mA&&!(c.border&&S.ignoreBorder)&&c.area>=.6*U&&c.area<=SINGLE_MAX*U));
 }
 
 // 判斷每一塊算幾顆
-function classify() {
-  const mA = minArea();
-  let total = 0;
-  for (let i = 1; i < S.comps.length; i++) {
-    const c = S.comps[i];
-    let auto = 0, cls = 'ignored', reason = '';
-    c.ratio = S.U ? c.area / S.U : 0;
-    if (c.border && S.ignoreBorder) { reason = '碰到照片邊緣，不計'; }
-    else if (!S.U || c.area < mA || c.ratio < NOISE_MAX) { reason = '太小，可能是雜點，不計'; }
-    else if (c.ratio < SINGLE_MAX) { auto = 1; cls = 'single'; reason = '單顆'; }
-    else { auto = Math.round(c.ratio); cls = 'cluster'; reason = '黏在一起，用面積估計約 ' + auto + ' 顆'; }
-    c.auto = auto; c.reason = reason;
-    if (S.overrides.has(c.id)) { c.count = S.overrides.get(c.id); c.cls = 'manual'; }
-    else { c.count = auto; c.cls = cls; }
-    total += c.count;
+function classify(){
+  const mA=minArea();let total=S.manualParts.length;S.autoIssues=[];
+  const elongated=S.profile&&S.profile.L/S.profile.W>=3;   // 細長零件才用直線證據
+  for(const c of S.comps.slice(1)){
+    let auto=0,cls='ignored',reason='';c.ratio=S.U?c.area/S.U:0;c.lines=null;
+    if(c.border&&S.ignoreBorder){reason='碰到照片邊緣，未計';}
+    else if(!S.U||c.area<mA||c.ratio<NOISE_MAX){reason='太小，可能是雜點或零件碎片，未計';}
+    else if(!colorOk(c)){reason='顏色和零件不同（可能是桌面、標籤或手），未計';}
+    else if(S.profile){
+      geometry(c);const p=S.profile;
+      const single=c.L&&c.L/p.L>=.7&&c.L/p.L<=1.3&&c.W/p.W>=.55&&c.W/p.W<=1.5&&c.ratio>=.55&&c.ratio<=1.5;
+      if(single){auto=1;cls='single';reason='形狀及面積符合單顆基準';}
+      else{auto=Math.max(1,Math.round(c.ratio));cls='cluster';c.lines=elongated?lineEvidence(c):null;reason='形狀異常／重疊，面積估計 '+auto+' PCS';if(c.lines!==null)reason+='；直線證據 '+c.lines+' 條';}
+    }else if(c.ratio<SINGLE_MAX){auto=1;cls='single';reason='面積符合單顆候選';}
+    else{auto=Math.max(1,Math.round(c.ratio));cls='cluster';reason='重疊／形狀不明，面積估計 '+auto+' PCS';}
+    c.auto=auto;c.reason=reason;
+    if(S.overrides.has(c.id)){c.count=S.overrides.get(c.id);c.cls='manual';}else{c.count=auto;c.cls=cls;}
+    if(c.cls==='cluster'&&c.lines!==null&&Math.abs(c.lines-c.count)>=1)S.autoIssues.push(c.id);
+    total+=c.count;
   }
-  S.total = total;
+  S.total=total;
 }
 
 /* ===== 畫面 ===== */
@@ -393,6 +514,7 @@ function computeView() {
     if (c.count <= 0) continue;
     x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y); x1 = Math.max(x1, c.x + c.w); y1 = Math.max(y1, c.y + c.h);
   }
+  for(const p of S.manualParts){x0=Math.min(x0,p.x-5);x1=Math.max(x1,p.x+5);y0=Math.min(y0,p.y-5);y1=Math.max(y1,p.y+5);}
   if (S.fullView || !isFinite(x0)) { S.view = { x: 0, y: 0, w: W, h: H }; return; }
   const m = Math.round(Math.max(W, H) * 0.04);
   x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m);
@@ -417,7 +539,7 @@ function render() {
   for (let yy = 0, q = 0; yy < V.h; yy++) {
     let p = (V.y + yy) * W + V.x;
     for (let xx = 0; xx < V.w; xx++, p++, q += 4) {
-      const l = L[p], s = p * 4;
+      const l = S.raw ? 0 : L[p], s = p * 4;
       if (l) {
         const j = l * 4, a = col[j + 3] / 255, ia = 1 - a;
         o[q] = rgba[s] * ia + col[j] * a; o[q + 1] = rgba[s + 1] * ia + col[j + 1] * a; o[q + 2] = rgba[s + 2] * ia + col[j + 2] * a;
@@ -432,15 +554,20 @@ function render() {
   const fs = Math.max(10, Math.round(15 * k));
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
   ctx.font = 'bold ' + fs + 'px sans-serif';
-  // 在黏在一起、手動修改的區塊旁邊寫數字
-  for (let i = 1; i < n; i++) {
+  // 單顆逐件編號；尚未分離的群組只顯示群組數，絕不假造每顆位置。
+  let seq=0;
+  for (let i = 1; !S.raw && i < n; i++) {
     const c = S.comps[i];
-    if (c.cls !== 'cluster' && c.cls !== 'manual') continue;
-    const txt = c.cls === 'cluster' ? '≈' + c.count : String(c.count);
+    if(c.count<=0)continue;
+    if(c.cls==='single'){++seq;if(!S.showNums)continue;}
+    const txt=c.cls==='single' ? String(seq) : c.cls==='cluster' ? '≈'+c.count : 'M:'+c.count;
     const tx = Math.min(V.w - fs, Math.max(fs, c.x + c.w - V.x + fs * 0.8)), ty = Math.min(V.h - fs, Math.max(fs, c.cy - V.y));
     ctx.lineWidth = Math.max(3, fs / 4); ctx.strokeStyle = '#fff'; ctx.strokeText(txt, tx, ty);
-    ctx.fillStyle = c.cls === 'cluster' ? '#c2410c' : '#1d4ed8'; ctx.fillText(txt, tx, ty);
+    ctx.fillStyle = c.cls === 'cluster' ? '#c2410c' : c.cls==='single'?'#166534':'#1d4ed8'; ctx.fillText(txt, tx, ty);
   }
+  if(!S.raw)S.manualParts.forEach((p,i)=>{
+    const x=p.x-V.x,y=p.y-V.y;ctx.beginPath();ctx.arc(x,y,Math.max(5,fs*.65),0,Math.PI*2);ctx.fillStyle='#2563eb';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff';ctx.fillText('+'+(i+1),x,y);
+  });
   // 選取中的區塊畫虛線框
   if (S.selected) {
     const c = S.comps[S.selected], pad = Math.max(4, fs / 3);
@@ -451,91 +578,77 @@ function render() {
 }
 
 // 統計：單顆幾個、黏在一起幾堆（估計幾顆）、手動修改幾塊
-function countStats() {
-  let singles = 0, clusters = 0, clusterSum = 0, manual = 0;
-  for (let i = 1; i < S.comps.length; i++) {
-    const c = S.comps[i];
-    if (c.cls === 'single') singles++;
-    else if (c.cls === 'cluster') { clusters++; clusterSum += c.count; }
-    else if (c.cls === 'manual') manual++;
-  }
-  return { singles, clusters, clusterSum, manual };
+function countStats(){let singles=0,clusters=0,clusterSum=0,manual=0;for(const c of S.comps.slice(1)){if(c.cls==='single')singles++;else if(c.cls==='cluster'){clusters++;clusterSum+=c.count;}else if(c.cls==='manual')manual++;}return{singles,clusters,clusterSum,manual};}
+
+function updateSummary(){
+  const {singles,clusters,clusterSum,manual}=countStats();$('totalNum').textContent=S.total;
+  const badge=$('badge');badge.hidden=false;badge.className='badge '+(S.reviewed?'ok':'est');
+  badge.textContent=S.reviewed?'✓ 操作者已覆核（非系統保證）':clusters?'⚠ 含 '+clusterSum+' PCS 估計，尚未覆核':'自動辨識完成，尚未覆核';
+  $('totalBox').classList.toggle('est',!S.reviewed);
+  $('summary').textContent='單顆候選 '+singles+'・待覆核 '+clusters+' 區（估 '+clusterSum+'）・人工修改 '+manual+' 區・人工補入 '+S.manualParts.length+' PCS';
+  const modeTxt='辨識：'+(S.useMode==='pin'?'金色模式':'通用模式')+(S.mode==='auto'?'（'+S.autoReason+'）':'（手動選擇）')+'・';
+  $('info').textContent=modeTxt+(S.U?'單顆基準 '+Math.round(S.U)+' px²（'+(S.Umanual?'人工':'自動，'+S.refCount+' 個候選')+'）'+(S.profile?'・長 '+S.profile.L.toFixed(1)+' px／寬 '+S.profile.W.toFixed(1)+' px':'')+'・門檻 '+S.T:'沒有可靠的單顆基準');
+  const warns=[];
+  if(!S.U)warns.push(S.useMode==='pin'&&S.mode==='pin'?'金色模式沒有找到零件。如果零件不是金色，或用了底光板，請把「辨識模式」改成「自動判斷」或「通用」。':'沒有找到可靠零件基準，請確認模式、背景、光線或門檻。');
+  else if(S.refCount<3&&!S.Umanual)warns.push('基準樣本不足，請點選一顆獨立零件建立人工基準。');
+  if(S.U&&!S.profile)warns.push('沒有建立形狀基準，目前只用面積判斷，請特別注意覆核。');
+  const offColor=S.comps.slice(1).filter(c=>!(c.border&&S.ignoreBorder)&&S.U&&c.area>=.5*S.U&&!colorOk(c)).length;
+  if(offColor)warns.push('有 '+offColor+' 塊顏色和零件不同，沒有計算（灰色）。如果其實是零件，請點它修改數量。');
+  if(clusters)warns.push('有 '+clusters+' 區重疊或形狀不明；其中 '+S.autoIssues.length+' 區的面積估算與直線證據不同。請點橘色區域核對。完全遮蔽的零件無法由單張照片確認。');
+  const edgePart=c=>{if(!(c.border&&c.area>=.3*S.U&&c.area<=1.6*S.U&&colorOk(c)))return false;if(!S.profile)return true;geometry(c);return !!c.W&&c.W<=1.6*S.profile.W&&c.L<=1.2*S.profile.L;};   // 被邊緣切到的零件不會比一顆長
+  if(S.ignoreBorder&&S.U&&S.comps.slice(1).some(edgePart))warns.push('照片邊緣有像零件的東西被排除（只拍到一部分），請把零件移離邊緣再拍，或查看原圖。');
+  $('warn').innerHTML=warns.map(t=>'<p>'+t+'</p>').join('');$('warn').hidden=!warns.length;
+  const ix=S.acc.findIndex(a=>a.id===S.photoId);$('addBtn').textContent=ix>=0?'更新這張照片的累計':'＋ 加入累計';$('addBtn').disabled=S.busy||!S.photoId;
+  $('reviewBtn').textContent=S.reviewed?'✓ 已覆核（點此取消）':'確認已人工覆核整張照片';$('reviewBtn').disabled=S.busy;
+  $('undoBtn').disabled=!S.undo.length;$('manualHint').hidden=!S.addMode;$('manualBtn').textContent=S.addMode?'結束補入模式':'＋ 補入漏判';
+  updateTest();
 }
-
-function updateSummary() {
-  const { singles, clusters, clusterSum, manual } = countStats();
-  $('totalNum').textContent = S.total;
-  // 標示這個數字能不能直接用：全部分開＝準確；有黏在一起＝含估計
-  const badge = $('badge');
-  $('totalBox').classList.toggle('est', clusters > 0);
-  if (!S.U || S.total === 0) badge.hidden = true;
-  else {
-    badge.hidden = false;
-    if (clusters) { badge.className = 'badge est'; badge.textContent = '⚠ 含估計 ' + clusterSum + ' 顆，不是準確數字'; }
-    else if (manual) { badge.className = 'badge ok'; badge.textContent = '✓ 已手動確認'; }
-    else { badge.className = 'badge ok'; badge.textContent = '✓ 全部分開，數量準確'; }
-  }
-  const parts = ['單顆 ' + singles + '（準確）'];
-  if (clusters) parts.push('黏在一起 ' + clusters + ' 堆，約 ' + clusterSum + ' 顆（估計）');
-  if (manual) parts.push('手動修改 ' + manual + ' 塊');
-  $('summary').textContent = parts.join('・');
-  $('info').textContent = S.U
-    ? '一顆約 ' + Math.round(S.U) + ' 像素（' + (S.Umanual ? '手動設定' : '自動，依 ' + S.refCount + ' 顆單獨的零件') + '）・門檻 ' + S.T
-    : '門檻 ' + S.T;
-
-  const warns = [];
-  if (!S.U) warns.push('沒有找到零件。請確認背景是白紙或底光板、零件沒有碰到照片邊緣，或到「進階設定」把門檻調低。');
-  else if (!S.Umanual && S.refCount < 3) warns.push('照片裡單獨的零件太少（' + S.refCount + ' 顆），自動判斷「一顆多大」可能不準。請點一顆單獨的零件，按「設為一顆的基準」。');
-  if (clusters) warns.push('有 ' + clusters + ' 堆零件黏在一起，數字是估計的。點橘色區塊可以改成正確數量，或把零件撥開再拍一次。');
-  $('warn').innerHTML = warns.map((t) => '<p>' + t + '</p>').join('');
-  $('warn').hidden = !warns.length;
-
-  if (S.accIndex !== null && S.acc[S.accIndex]) { S.acc[S.accIndex].n = S.total; S.acc[S.accIndex].est = clusterSum; saveAcc(); renderAcc(); }
-  $('addBtn').textContent = S.accIndex !== null ? '✓ 已加入累計（修改會自動更新）' : '＋ 加入累計';
-  $('addBtn').disabled = S.accIndex !== null;
-}
+function invalidate(){S.reviewed=false;}
+function pushUndo(){S.undo.push({overrides:[...S.overrides],manualParts:S.manualParts.map(p=>({...p})),U:S.U,Umanual:S.Umanual,profile:S.profile?{...S.profile}:null,refCount:S.refCount,refColor:S.refColor?{...S.refColor}:null,colorTol:S.colorTol});if(S.undo.length>50)S.undo.shift();}
+function clearEdits(){S.overrides.clear();S.manualParts=[];S.undo=[];S.addMode=false;invalidate();}
+function hasEdits(){return S.overrides.size||S.manualParts.length||S.Umanual||S.reviewed;}
+function allowReprocess(){return !hasEdits()||confirm('重新辨識會清除本張人工修改及覆核狀態，已儲存的累計不變。確定繼續？');}
+async function fileId(file){const buf=await file.arrayBuffer();if(window.crypto&&crypto.subtle){try{return 'sha256:'+Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buf)),x=>x.toString(16).padStart(2,'0')).join('');}catch(e){}}
+  let a=2166136261,b=5381;for(const v of new Uint8Array(buf)){a=Math.imul(a^v,16777619);b=Math.imul(b,33)^v;}return 'local:'+buf.byteLength+':'+(a>>>0).toString(16)+':'+(b>>>0).toString(16);}
+function setBusy(b){S.busy=b;['camInput','fileInput','partMode','resSel','thr','thrAuto','ignBorder','addBtn','reviewBtn','useCur','saveBtn'].forEach(id=>$(id).disabled=b);}
 
 /* ===== 主流程 ===== */
-async function processFile(file) {
-  try {
-    setStatus('計算中…');
-    await new Promise((r) => setTimeout(r, 30)); // 讓畫面先更新
-    const imgData = await decodeImage(file, S.maxDim);
-    S.img = { w: imgData.width, h: imgData.height, rgba: imgData.data };
-    if (S.diff) { S.diff.delete(); S.diff = null; }
-    const r = computeDiff(imgData);
-    S.diff = r.diff;
-    S.autoT = Math.min(200, Math.max(MIN_THRESHOLD, Math.round(r.otsu)));
-    S.T = S.autoT; S.manualT = false; updateThrUI();
-    S.accIndex = null;
-    segment(S.T); estimateUnit(); classify(); computeView();
-    $('resultCard').hidden = false;
-    render();
-    setStatus('完成。照片大小 ' + S.img.w + '×' + S.img.h);
-  } catch (e) {
-    console.error(e);
-    setStatus('處理失敗：' + (e && e.message ? e.message : e), true);
-  }
+async function processFile(file){
+  if(S.busy)return;const job=++S.job,t0=performance.now();setBusy(true);$('resultCard').hidden=true;
+  S.labels=null;S.photoId=null;S.img=null;S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
+  clearEdits();S.selected=null;hideSheet();$('truth').value='';
+  try{
+    setStatus('計算中…');await new Promise(r=>setTimeout(r,30));
+    const [imgData,id]=await Promise.all([decodeImage(file,S.maxDim),fileId(file)]);if(job!==S.job)return;
+    S.img={w:imgData.width,h:imgData.height,rgba:imgData.data};
+    if(S.diff){S.diff.delete();S.diff=null;}
+    const r=computeDiff(imgData);S.diff=r.diff;S.chroma=r.chroma;S.warm=r.warm;
+    S.autoT=Math.min(200,Math.max(MIN_THRESHOLD,Math.round(r.otsu)));S.T=S.autoT;S.manualT=false;updateThrUI();
+    S.photoId=id;S.accIndex=null;decideMode(S.T);segment(S.T);estimateUnit();classify();S.initialTotal=S.total;S.elapsed=(performance.now()-t0)/1000;computeView();
+    $('resultCard').hidden=false;setBusy(false);render();setStatus('完成。'+(S.useMode==='pin'?'金色模式':'通用模式')+'，'+S.img.w+'×'+S.img.h+'，'+S.elapsed.toFixed(2)+' 秒（含讀圖）');
+  }catch(e){console.error(e);S.img=null;S.labels=null;S.photoId=null;setStatus('處理失敗：'+(e.message||e),true);}
+  finally{if(job===S.job){setBusy(false);if(!S.img)$('useCur').disabled=true;}}
 }
 
 function onFilePicked(ev) {
   const f = ev.target.files && ev.target.files[0];
   ev.target.value = '';
   if (!f) return;
-  S.file = f;
+  if (S.busy) { toast('還在計算上一張，請稍等再選'); return; }
+  if(S.img&&hasEdits()&&!confirm('切換新照片會清除目前畫面人工修改，已儲存累計不變。確定繼續？'))return;
+  clearTimeout(thrTimer);S.file = f;
   if (!S.cvReady) { S.pending = true; setStatus('照片已選好，OpenCV 載入完成後會自動開始計算…'); return; }
   processFile(f);
 }
 
-function rerunThreshold() {
-  if (!S.diff) return;
-  const hadEdits = S.overrides.size > 0 || S.Umanual;
-  segment(S.T); estimateUnit(); classify(); computeView(); render();
-  if (hadEdits) toast('門檻已改變，手動修改已清除');
+function rerunThreshold(){
+  if(!S.diff||!S.img||S.busy)return;
+  if(!allowReprocess()){S.T=S.appliedT;S.manualT=S.T!==S.autoT;updateThrUI();return;}
+  const t0=performance.now();clearEdits();segment(S.T);estimateUnit();classify();S.initialTotal=S.total;S.elapsed=(performance.now()-t0)/1000;computeView();render();
 }
 
 function updateThrUI() {
-  $('thr').value = S.T; $('thrVal').textContent = S.T;
+  S.lastT = S.T; $('thr').value = S.T; $('thrVal').textContent = S.T;
   $('thrMode').textContent = S.manualT ? '（手動，自動值是 ' + S.autoT + '）' : '（自動）';
 }
 
@@ -569,53 +682,34 @@ function fillSheet() {
   $('sheetTitle').textContent = c.cls === 'manual' ? '這一塊：手動設定 ' + c.count + ' 顆' : '這一塊：' + c.reason;
   $('sheetInfo').textContent = '面積 ' + c.area + ' 像素' + (S.U ? '（約一顆的 ' + c.ratio.toFixed(2) + ' 倍）' : '') +
     (c.cls === 'manual' ? '・自動判斷是 ' + c.auto + ' 顆' : '');
-  $('refBtn').disabled = c.area < minArea();
+  $('refBtn').disabled = c.area < minArea() || (S.ignoreBorder&&c.border);
 }
 function setOverride(id, n) {
-  S.overrides.set(id, Math.max(0, n)); classify(); render(); fillSheet();
+  pushUndo();invalidate();S.overrides.set(id, Math.max(0, Math.trunc(n))); classify(); render(); fillSheet();
 }
 
 /* ===== 累計 ===== */
-function loadAcc() { try { return JSON.parse(localStorage.getItem(ACC_KEY) || '[]'); } catch (e) { return []; } }
-function saveAcc() { try { localStorage.setItem(ACC_KEY, JSON.stringify(S.acc)); } catch (e) {} }
-function renderAcc() {
-  const ol = $('accList'); ol.innerHTML = '';
-  let sum = 0, estSum = 0, unknown = false;
-  S.acc.forEach((it, i) => {
-    sum += it.n;
-    const known = typeof it.est === 'number';   // 舊版存的紀錄沒有這個資料
-    if (known) estSum += it.est; else unknown = true;
-    const mark = !known ? '' : (it.est ? ' <span class="est-text">（含估計 ' + it.est + '）</span>' : ' <span class="ok-text">✓</span>');
-    const li = document.createElement('li');
-    const t = new Date(it.t);
-    const hm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-    li.innerHTML = '<span>第 ' + (i + 1) + ' 張　<b>' + it.n + '</b> 顆' + mark + '　<span class="muted">' + hm + '</span></span>';
-    const del = document.createElement('button'); del.textContent = '✕'; del.title = '刪除';
-    del.onclick = () => {
-      S.acc.splice(i, 1);
-      if (S.accIndex !== null) { if (S.accIndex === i) S.accIndex = null; else if (S.accIndex > i) S.accIndex--; }
-      saveAcc(); renderAcc(); if (S.img) updateSummary();
-    };
-    li.appendChild(del); ol.appendChild(li);
+function loadAcc(){try{const a=JSON.parse(localStorage.getItem(ACC_KEY)||'[]');return Array.isArray(a)?a.filter(x=>x&&Number.isInteger(x.n)&&x.n>=0):[];}catch(e){return [];}}
+function saveAcc(){try{localStorage.setItem(ACC_KEY,JSON.stringify(S.acc));return true;}catch(e){toast('儲存失敗：瀏覽器儲存空間不可用');return false;}}
+function renderAcc(){
+  const ol=$('accList');ol.innerHTML='';let sum=0,estSum=0,unreviewed=false;
+  S.acc.forEach((it,i)=>{sum+=it.n;estSum+=it.reviewed?0:(it.est||0);if(!it.reviewed)unreviewed=true;
+    const li=document.createElement('li'),span=document.createElement('span');span.textContent='第 '+(i+1)+' 張　'+it.n+' PCS　'+(it.reviewed?'已人工覆核':'尚未覆核')+(it.est&&!it.reviewed?'（含估 '+it.est+'）':'')+'　'+new Date(it.t).toLocaleString();
+    const del=document.createElement('button');del.textContent='✕';del.title='刪除';del.onclick=()=>{S.acc.splice(i,1);saveAcc();renderAcc();if(S.img)updateSummary();};li.append(span,del);ol.append(li);
   });
-  $('accTotal').textContent = sum;
-  $('accNote').innerHTML = !S.acc.length ? '' : estSum ? '<span class="est-text">⚠ 含估計 ' + estSum + ' 顆，不是準確數字</span>'
-    : unknown ? '' : '<span class="ok-text">✓ 全部準確</span>';
-  S.accSum = sum; S.accEst = estSum;
-  calc();
+  $('accTotal').textContent=sum;$('accNote').textContent=!S.acc.length?'':unreviewed?'含未覆核紀錄'+(estSum?'（估 '+estSum+' PCS）':''):'所有紀錄均已人工覆核';S.accSum=sum;S.accEst=estSum;S.accUnreviewed=unreviewed;calc();
 }
 
 /* ===== 秤重換算 ===== */
-function calc() {
-  const n = parseFloat($('cSample').value), sw = parseFloat($('cSampleW').value), bw = parseFloat($('cBagW').value);
-  const out = $('calcOut');
-  if (!(n > 0) || !(sw > 0)) { out.textContent = '填入樣本數量和樣本重量，就會算出單重；再填整袋重量，就會算出整袋數量。'; return; }
-  const unit = sw / n;
-  let html = '單重：<b>' + (unit >= 1 ? unit.toFixed(4) : unit.toPrecision(4)) + '</b> g／顆';
-  if (bw > 0) html += '<br>整袋約：<b style="font-size:22px">' + Math.round(bw / unit).toLocaleString() + '</b> 顆';
-  if (S.calcEst > 0) html += '<br><span class="est-text">⚠ 樣本數量裡有 ' + S.calcEst + ' 顆是估計的，換算結果可能有誤差</span>';
-  out.innerHTML = html;
+function calc(){
+  const n=Number($('cSample').value),grossS=Number($('cSampleW').value),grossB=Number($('cBagW').value),st=Number($('cSampleTare').value),bt=Number($('cBagTare').value),sw=grossS-st,bw=grossB-bt,out=$('calcOut');
+  if($('cSample').value===''||$('cSampleW').value===''){out.textContent='填入樣本數量和樣本重量，就會算出單重；再填整袋重量，就會算出整袋數量。';return;}
+  if(st<0||bt<0||!Number.isInteger(n)||n<=0||sw<=0||($('cBagW').value!==''&&bw<=0)){out.textContent='請輸入正整數樣本數量及有效重量；皮重不可為負，淨重須大於零。';return;}
+  const unit=sw/n;out.innerHTML='單重：<b>'+unit.toPrecision(5)+'</b> g／PCS'+($('cBagW').value!==''?'<br>整袋估算：<b style="font-size:22px">'+Math.round(bw/unit).toLocaleString()+'</b> PCS':'')+(S.calcUnreviewed?'<br><span class="est-text">⚠ 樣本數量尚未人工覆核，整袋換算可能放大誤差。</span>':'');
 }
+function updateTest(){const v=$('truth').value,n=Number(v);$('testOut').textContent=v!==''&&Number.isInteger(n)&&n>=0?'自動 '+S.initialTotal+' PCS；目前 '+S.total+' PCS；實際 '+n+' PCS；差值 '+(S.total-n)+' PCS'+(n>0?'；絕對數量誤差率 '+(Math.abs(S.total-n)/n*100).toFixed(2)+'%':''):'輸入實際清點數量，即可比較誤差。';}
+function loadTests(){try{const a=JSON.parse(localStorage.getItem(TEST_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}}
+function downloadBlob(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 
 /* ===== 小提示 ===== */
 let toastTimer = null;
@@ -627,65 +721,63 @@ function toast(msg) {
 }
 
 /* ===== 綁定按鈕 ===== */
-$('camInput').addEventListener('change', onFilePicked);
-$('fileInput').addEventListener('change', onFilePicked);
 
-$('view').addEventListener('click', (e) => {
-  if (!S.labels) return;
-  const r = e.currentTarget.getBoundingClientRect(), V = S.view;
-  const x = V.x + Math.floor((e.clientX - r.left) * V.w / r.width);
-  const y = V.y + Math.floor((e.clientY - r.top) * V.h / r.height);
-  const id = findCompAt(x, y);
-  if (id) openSheet(id);
-  else { S.selected = null; hideSheet(); render(); }
-});
-$('plusBtn').onclick = () => { const c = S.comps[S.selected]; if (c) setOverride(c.id, c.count + 1); };
-$('minusBtn').onclick = () => { const c = S.comps[S.selected]; if (c) setOverride(c.id, c.count - 1); };
-$('zeroBtn').onclick = () => { const c = S.comps[S.selected]; if (c) setOverride(c.id, 0); };
-$('resetBlobBtn').onclick = () => { const c = S.comps[S.selected]; if (c) { S.overrides.delete(c.id); classify(); render(); fillSheet(); } };
-$('refBtn').onclick = () => {
-  const c = S.comps[S.selected]; if (!c) return;
-  // 用「跟點選的這顆差不多大」的所有零件取中位數，比只用一顆更穩定
-  const mA = minArea(), similar = [];
-  for (let i = 1; i < S.comps.length; i++) {
-    const d = S.comps[i];
-    if (d.area >= mA && !(d.border && S.ignoreBorder) && d.area >= 0.7 * c.area && d.area <= 1.3 * c.area) similar.push(d.area);
+$('camInput').addEventListener('change',onFilePicked);$('fileInput').addEventListener('change',onFilePicked);
+$('view').addEventListener('click',e=>{
+  if(!S.labels||S.busy)return;const r=e.currentTarget.getBoundingClientRect(),V=S.view;
+  const x=V.x+Math.floor((e.clientX-r.left)*V.w/r.width),y=V.y+Math.floor((e.clientY-r.top)*V.h/r.height);
+  if(x<0||y<0||x>=S.img.w||y>=S.img.h)return;
+  if(S.addMode){
+    const radius=Math.max(5,12*V.w/r.width),i=S.manualParts.findIndex(p=>Math.hypot(p.x-x,p.y-y)<radius);
+    if(i>=0){pushUndo();S.manualParts.splice(i,1);}else{pushUndo();S.manualParts.push({x,y});}
+    invalidate();classify();render();return;
   }
-  S.U = similar.length ? median(similar) : c.area; S.Umanual = true; S.overrides.delete(c.id);
-  classify(); render(); fillSheet(); toast('已設為基準：一顆約 ' + Math.round(S.U) + ' 像素');
-};
-$('closeSheetBtn').onclick = () => { S.selected = null; hideSheet(); render(); };
-
-let thrTimer = null;
-$('thr').addEventListener('input', () => {
-  S.T = parseInt($('thr').value, 10); S.manualT = true; updateThrUI();
-  clearTimeout(thrTimer); thrTimer = setTimeout(rerunThreshold, 250);
+  const id=findCompAt(x,y);if(id)openSheet(id);else{S.selected=null;hideSheet();render();}
 });
-$('thrAuto').onclick = () => { S.T = S.autoT; S.manualT = false; updateThrUI(); rerunThreshold(); };
-$('ignBorder').onchange = () => { S.ignoreBorder = $('ignBorder').checked; if (S.img) { if (!S.Umanual) estimateUnit(); classify(); computeView(); render(); } };
-$('viewBtn').onclick = () => {
-  S.fullView = !S.fullView; $('viewBtn').textContent = S.fullView ? '放大零件區' : '看整張照片';
-  if (S.img) { computeView(); render(); }
+$('manualBtn').onclick=()=>{if(!S.img||S.busy)return;S.addMode=!S.addMode;S.raw=false;$('rawBtn').textContent='顯示原圖';S.selected=null;hideSheet();render();};
+$('rawBtn').onclick=()=>{if(!S.img)return;S.raw=!S.raw;$('rawBtn').textContent=S.raw?'顯示標示圖':'顯示原圖';render();};
+$('numBtn').onclick=()=>{S.showNums=!S.showNums;$('numBtn').textContent=S.showNums?'隱藏編號':'顯示編號';if(S.img)render();};
+$('undoBtn').onclick=()=>{const q=S.undo.pop();if(!q)return;S.overrides=new Map(q.overrides);S.manualParts=q.manualParts;S.U=q.U;S.Umanual=q.Umanual;S.profile=q.profile;S.refCount=q.refCount;S.refColor=q.refColor;S.colorTol=q.colorTol;invalidate();classify();render();if(S.selected)fillSheet();};
+$('reviewBtn').onclick=()=>{if(S.reviewed){invalidate();render();return;}if(!S.fullView){S.fullView=true;computeView();$('viewBtn').textContent='放大零件區';render();toast('已切換整張照片，請先檢查再確認');return;}if(confirm('是否已檢查整張照片、漏判及重疊區域，並確認數量？')){S.reviewed=true;render();}};
+$('plusBtn').onclick=()=>{const c=S.comps[S.selected];if(c)setOverride(c.id,c.count+1);};
+$('minusBtn').onclick=()=>{const c=S.comps[S.selected];if(c)setOverride(c.id,c.count-1);};
+$('zeroBtn').onclick=()=>{const c=S.comps[S.selected];if(c)setOverride(c.id,0);};
+$('resetBlobBtn').onclick=()=>{const c=S.comps[S.selected];if(c){pushUndo();invalidate();S.overrides.delete(c.id);classify();render();fillSheet();}};
+$('refBtn').onclick=()=>{
+ const c=S.comps[S.selected];if(!c)return;pushUndo();invalidate();
+ geometry(c);
+ if(c.L){const similar=S.comps.slice(1).filter(q=>q.L&&!(S.ignoreBorder&&q.border)&&closeProfile(q,c));setProfile(similar.length?similar:[c]);}
+ else{const refs=S.comps.slice(1).filter(q=>q.area>=minArea()&&!(S.ignoreBorder&&q.border)&&q.area>=.7*c.area&&q.area<=1.3*c.area);S.U=refs.length?median(refs.map(q=>q.area)):c.area;S.refCount=refs.length;S.profile=null;setRefColor(refs.length?refs:[c]);}
+ S.Umanual=true;S.overrides.set(c.id,1);classify();render();fillSheet();toast('已設定單顆基準');
 };
-$('resSel').onchange = () => { S.maxDim = parseInt($('resSel').value, 10); if (S.file && S.cvReady) processFile(S.file); };
-
-$('addBtn').onclick = () => {
-  if (!S.img || S.accIndex !== null) return;
-  S.acc.push({ n: S.total, est: countStats().clusterSum, t: Date.now() }); S.accIndex = S.acc.length - 1;
-  saveAcc(); renderAcc(); updateSummary(); toast('已加入累計');
+$('closeSheetBtn').onclick=()=>{S.selected=null;hideSheet();render();};
+let thrTimer=null;
+$('thr').addEventListener('input',()=>{S.T=Number($('thr').value);S.manualT=true;updateThrUI();clearTimeout(thrTimer);thrTimer=setTimeout(rerunThreshold,300);});
+$('thrAuto').onclick=()=>{clearTimeout(thrTimer);S.T=S.autoT;S.manualT=false;updateThrUI();rerunThreshold();};
+$('ignBorder').onchange=()=>{S.ignoreBorder=$('ignBorder').checked;if(S.img){if(!allowReprocess()){$('ignBorder').checked=S.ignoreBorder=!S.ignoreBorder;return;}clearEdits();segment(S.T);estimateUnit();classify();S.initialTotal=S.total;computeView();render();}};
+$('viewBtn').onclick=()=>{S.fullView=!S.fullView;$('viewBtn').textContent=S.fullView?'放大零件區':'看整張照片';if(S.img){computeView();render();}};
+$('resSel').onchange=()=>{const v=Number($('resSel').value);if(S.file&&S.img&&!allowReprocess()){$('resSel').value=S.maxDim;return;}clearTimeout(thrTimer);S.maxDim=v;if(S.file&&S.cvReady)processFile(S.file);};
+$('partMode').onchange=()=>{if(S.file&&S.img&&!allowReprocess()){$('partMode').value=S.mode;return;}clearTimeout(thrTimer);S.mode=$('partMode').value;if(S.file&&S.cvReady)processFile(S.file);};
+$('addBtn').onclick=()=>{
+ if(!S.img||!S.photoId||S.busy)return;
+ if(!S.reviewed&&!confirm('尚未人工覆核，仍要儲存估計紀錄？'))return;
+ const ix=S.acc.findIndex(a=>a.id===S.photoId),item={id:S.photoId,n:S.total,est:countStats().clusterSum,reviewed:S.reviewed,t:Date.now(),mode:(S.mode==='auto'?'auto-':'')+S.useMode};
+ if(ix>=0){if(!confirm('此照片已存在，是否更新原紀錄？不會重複累加。'))return;S.acc[ix]=item;}else S.acc.push(item);
+ const saved=saveAcc();renderAcc();updateSummary();if(saved)toast(ix>=0?'已更新原紀錄':'已加入累計');
 };
-$('accClear').onclick = () => {
-  if (!S.acc.length || !confirm('確定要清除全部累計嗎？')) return;
-  S.acc = []; S.accIndex = null; saveAcc(); renderAcc(); if (S.img) updateSummary();
-};
+$('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
+$('truth').oninput=updateTest;
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testExport').onclick=()=>{const keys=['time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
   // 下載的圖：上方加一條白色標題（總數、時間），下面是標示圖
+  const oldFull=S.fullView,oldRaw=S.raw;S.fullView=true;S.raw=false;computeView();render();
   const view = $('view'), d = new Date();
   const p2 = (v) => String(v).padStart(2, '0');
   const when = d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
   const st = countStats();
-  const tag = st.clusters ? '（含估計 ' + st.clusterSum + ' 顆）' : st.manual ? '（已手動確認）' : '（全部分開，數量準確）';
+  const tag=S.reviewed?'（已人工覆核）':st.clusters?'（未覆核，含估 '+st.clusterSum+'）':'（尚未覆核）';
   const title = '共 ' + S.total + ' 顆' + tag + '　' + when;
   let fs = Math.max(16, Math.round(view.width / 28));
   const out = document.createElement('canvas'), ctx = out.getContext('2d');
@@ -697,23 +789,23 @@ $('saveBtn').onclick = () => {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, hh);
   ctx.fillStyle = st.clusters ? '#9a3412' : '#166534'; ctx.font = 'bold ' + fs + 'px sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillText(title, fs * 0.6, hh / 2);
-  ctx.drawImage(view, 0, hh);
+  ctx.drawImage(view, 0, hh);S.fullView=oldFull;S.raw=oldRaw;computeView();render();const savedTotal=S.total;
   out.toBlob((b) => {
     if (!b) return;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(b);
-    a.download = '零件計數_' + S.total + '顆_' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '_' + p2(d.getHours()) + p2(d.getMinutes()) + '.jpg';
+    a.download = '零件計數_' + savedTotal + '顆_' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '_' + p2(d.getHours()) + p2(d.getMinutes()) + '.jpg';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }, 'image/jpeg', 0.9);
 };
-$('cSample').addEventListener('input', () => { S.calcEst = 0; calc(); });   // 自己輸入的數字，不標估計
-['cSampleW', 'cBagW'].forEach((id) => $(id).addEventListener('input', calc));
-$('useAcc').onclick = () => { $('cSample').value = S.accSum || ''; S.calcEst = S.accEst || 0; calc(); };
-$('useCur').onclick = () => { $('cSample').value = S.img ? S.total : ''; S.calcEst = S.img ? countStats().clusterSum : 0; calc(); };
+$('cSample').addEventListener('input',()=>{S.calcEst=0;S.calcUnreviewed=false;calc();});
+['cSampleW','cBagW','cSampleTare','cBagTare'].forEach(id=>$(id).addEventListener('input',calc));
+$('useAcc').onclick=()=>{$('cSample').value=S.accSum||'';S.calcEst=S.accEst;S.calcUnreviewed=S.accUnreviewed;calc();};
+$('useCur').onclick=()=>{$('cSample').value=S.img?S.total:'';S.calcEst=S.img?countStats().clusterSum:0;S.calcUnreviewed=!!S.img&&!S.reviewed;calc();};
 
 /* ===== 開始 ===== */
-S.acc = loadAcc(); renderAcc();
+S.acc=loadAcc(); S.tests=loadTests(); renderAcc();
 initOpenCV();
 </script>
 </body>
