@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.5</title>
+<title>零件拍照計數 V3.6</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -80,7 +80,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.5</h1>
+  <h1>零件拍照計數 V3.6</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -203,7 +203,7 @@
       <canvas id="pileCv"></canvas>
       <div class="muted">放大圖：每根零件點一下做記號（再點一次取消），數完按下面的按鈕。</div>
       <div id="sheetAi" class="muted" hidden></div>
-      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="aiUseBtn" class="btn small" hidden>用 AI 數量</button><button id="pileClear" class="btn small">清除記號</button></div>
+      <div class="btnrow"><button id="pileUse" class="btn small">用記號數量（0）</button><button id="aiUseBtn" class="btn small" hidden>用 AI 數量</button><button id="aiZoomBtn" class="btn small" hidden>AI 放大重數這堆</button><button id="pileClear" class="btn small">清除記號</button></div>
     </div>
     <div class="btnrow">
       <button id="refBtn" class="btn">設為「一顆」的基準</button>
@@ -680,7 +680,7 @@ function setBusy(b){S.busy=b;['camInput','fileInput','partMode','resSel','thr','
 /* ===== 主流程 ===== */
 async function processFile(file){
   if(S.busy)return;const job=++S.job,t0=performance.now();setBusy(true);$('resultCard').hidden=true;
-  S.labels=null;S.photoId=null;S.img=null;S.ai=null;aiUI();S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
+  S.labels=null;S.photoId=null;S.img=null;S.ai=null;S.full=null;aiUI();S.fullView=true;S.raw=false;$('viewBtn').textContent='放大零件區';$('rawBtn').textContent='顯示原圖';
   clearEdits();S.selected=null;hideSheet();$('truth').value='';
   try{
     setStatus('計算中…');await new Promise(r=>setTimeout(r,30));
@@ -779,8 +779,8 @@ function fillSheet() {
     (c.cls === 'manual' ? '・自動判斷是 ' + c.auto + ' 顆' : '');
   $('refBtn').disabled = c.area < minArea() || (S.ignoreBorder&&c.border);
   const an=S.ai?(S.ai.per.get(c.id)||0):null;
-  $('sheetAi').hidden=an===null;$('aiUseBtn').hidden=an===null||an===c.count;
-  if(an!==null){$('sheetAi').textContent='AI 認為這塊有 '+an+' 顆'+(an===c.count?'（和目前一樣）':'（目前 '+c.count+' 顆）');$('aiUseBtn').textContent='用 AI 數量（'+an+'）';}
+  $('sheetAi').hidden=an===null;$('aiUseBtn').hidden=an===null||an===c.count;$('aiZoomBtn').hidden=an===null||S.aiBusy;
+  if(an!==null){const z=S.ai.zoomIds&&S.ai.zoomIds.has(c.id);$('sheetAi').textContent=(z?'AI（放大確認）認為這塊有 ':'AI 認為這塊有 ')+an+' 顆'+(an===c.count?'（和目前一樣）':'（目前 '+c.count+' 顆）');$('aiUseBtn').textContent='用 AI 數量（'+an+'）';}
 }
 function setOverride(id, n) {
   pushUndo();invalidate();S.overrides.set(id, Math.max(0, Math.trunc(n))); classify(); render(); fillSheet();
@@ -812,7 +812,10 @@ function downloadBlob(blob,name){const a=document.createElement('a'),url=URL.cre
 
 /* ===== AI 複查（Roboflow SAM 3）===== */
 // 金鑰只存在這支手機的 localStorage，不寫進程式碼。
-const RF_KEY='partcount.rf.v1', RF_URL='https://serverless.roboflow.com/sam3/concept_segment', RF_MAX=1600;
+const RF_KEY='partcount.rf.v1', RF_URL='https://serverless.roboflow.com/sam3/concept_segment';
+// AI 看照片時會把整張縮到約 1000 像素，零件太小就分不清交叉的針。
+// 所以只裁「有零件的區域」送出；零件分布太廣時切成 2×2 塊；數量不一致的堆再放大單獨看一次。
+const AI_OUT=1200, AI_ZOOM_OUT=1008, AI_PIN_PX=55, AI_ZOOM_MAX=4;
 function rfLoad(){try{const o=JSON.parse(localStorage.getItem(RF_KEY)||'{}');return o&&typeof o==='object'?o:{};}catch(e){return {};}}
 function rfShow(){const o=rfLoad();$('rfKey').value=o.key||'';$('rfGas').value=o.gas||'';$('rfPass').value=o.pass||'';$('rfPrompt').value=o.prompt||'gold pin';$('rfThr').value=o.thr||0.5;$('rfState').textContent=o.gas?'（走 GAS）':o.key?'（手機直接連線）':'（尚未設定）';}
 function rfSave(){const gas=$('rfGas').value.trim(),pass=$('rfPass').value,key=$('rfKey').value.trim(),prompt=$('rfPrompt').value.trim()||'gold pin';let thr=Number($('rfThr').value);if(!(thr>0&&thr<1))thr=0.5;
@@ -834,7 +837,7 @@ function polysOf(p){
 function polyCentroid(P){let a=0,cx=0,cy=0;for(let i=0,j=P.length-1;i<P.length;j=i++){const f=P[j][0]*P[i][1]-P[i][0]*P[j][1];a+=f;cx+=(P[j][0]+P[i][0])*f;cy+=(P[j][1]+P[i][1])*f;}
   if(Math.abs(a)<1e-6){let sx=0,sy=0;P.forEach(q=>{sx+=q[0];sy+=q[1];});return{x:sx/P.length,y:sy/P.length,a:0};}return{x:cx/(3*a),y:cy/(3*a),a:Math.abs(a/2)};}
 // 解析回應：找出每個實例的中心點（s = 上傳時的縮放比例）
-function aiParse(j,s){
+function aiParse(j,k,ox,oy){
   let preds=[];
   if(j&&Array.isArray(j.prompt_results))j.prompt_results.forEach(r=>{if(r&&Array.isArray(r.predictions))preds.push(...r.predictions);});
   else if(j&&Array.isArray(j.predictions))preds=j.predictions;
@@ -846,17 +849,20 @@ function aiParse(j,s){
     else if(Number.isFinite(p.x)&&Number.isFinite(p.y)){x=p.x;y=p.y;}   // 偵測框格式：x,y 是框的中心
     else if(p.box||p.bbox){const b=p.box||p.bbox;if(Array.isArray(b)&&b.length>=4){x=(b[0]+b[2])/2;y=(b[1]+b[3])/2;}else if(b&&Number.isFinite(b.x0)){x=(b.x0+b.x1)/2;y=(b.y0+b.y1)/2;}}
     if(x===null||!Number.isFinite(x)||!Number.isFinite(y))continue;
-    pts.push({x:x/s,y:y/s,conf:Number(p.confidence??p.score??0),polys:polys.map(P=>P.map(q=>[q[0]/s,q[1]/s]))});
+    pts.push({x:ox+x/k,y:oy+y/k,conf:Number(p.confidence??p.score??0),polys:polys.map(P=>P.map(q=>[ox+q[0]/k,oy+q[1]/k]))});
   }
   return{pts,raw:preds.length};
 }
 // 每個 AI 實例落在哪一塊（中心點附近找最近的零件像素）
+function compNear(x0,y0){
+  const W=S.img.w,H=S.img.h,L=S.labels,R=Math.max(3,Math.round(S.profile?S.profile.W*.6:5)),px=Math.round(x0),py=Math.round(y0);let id=0,bd=1e9;
+  for(let dy=-R;dy<=R&&bd>0;dy++)for(let dx=-R;dx<=R;dx++){const x=px+dx,y=py+dy;if(x<0||y<0||x>=W||y>=H)continue;const l=L[y*W+x];if(l){const d=dx*dx+dy*dy;if(d<bd){bd=d;id=l;}}}
+  return id;
+}
 function aiMap(){
-  const A=S.ai;if(!A||!S.labels)return;const W=S.img.w,H=S.img.h,L=S.labels,R=Math.max(3,Math.round(S.profile?S.profile.W*.6:5));
-  A.per=new Map();A.outside=0;
-  for(const p of A.pts){const px=Math.round(p.x),py=Math.round(p.y);let id=0,bd=1e9;
-    for(let dy=-R;dy<=R&&!(bd===0);dy++)for(let dx=-R;dx<=R;dx++){const x=px+dx,y=py+dy;if(x<0||y<0||x>=W||y>=H)continue;const l=L[y*W+x];if(l){const d=dx*dx+dy*dy;if(d<bd){bd=d;id=l;}}}
-    p.comp=id;if(id&&!(S.ignoreBorder&&S.comps[id]&&S.comps[id].border))A.per.set(id,(A.per.get(id)||0)+1);else A.outside++;}
+  const A=S.ai;if(!A||!S.labels)return;A.per=new Map();A.outside=0;A.zoomIds=new Set();
+  for(const p of A.pts){const id=compNear(p.x,p.y);p.comp=id;
+    if(id&&!(S.ignoreBorder&&S.comps[id]&&S.comps[id].border)){A.per.set(id,(A.per.get(id)||0)+1);if(p.zoom)A.zoomIds.add(id);}else A.outside++;}
 }
 function aiDiffs(){
   if(!S.ai)return[];const ids=new Set([...S.ai.per.keys()]);
@@ -867,7 +873,7 @@ function aiUI(){
   const A=S.ai,has=!!(A&&S.img);$('aiOut').hidden=!has;$('aiActs').hidden=!has;$('aiDotsBtn').hidden=!has;
   if(!has)return;
   const d=aiDiffs(),pileD=d.filter(id=>S.comps[id].cls!=='single'||(A.per.get(id)||0)>1);
-  let t='AI 找到 <b>'+A.pts.length+'</b> 顆；本頁目前 <b>'+S.total+'</b> 顆。';
+  let t='AI 找到 <b>'+A.pts.length+'</b> 顆；本頁目前 <b>'+S.total+'</b> 顆。'+(A.calls?'<span class="muted">（AI 看了 '+A.calls+' 次'+(A.zoomIds&&A.zoomIds.size?'，其中 '+A.zoomIds.size+' 堆放大確認':'')+'）</span>':'');
   if(!d.length&&!A.outside)t+='<br>每一塊的數量都一致 ✓';
   else{t+='<br>'+d.length+' 塊數量不同'+(A.outside?'；另有 '+A.outside+' 顆 AI 標記不在任何一塊上（可能是漏判，可用「補入漏判」）':'')+'。';}
   t+='<br><span class="muted">紫色圈是 AI 找到的零件。AI 也會錯，請看過再採用；不會自動改數字。</span>';
@@ -880,12 +886,73 @@ function aiDraw(ctx,ox,oy,k,r,onlyId){
     ctx.beginPath();ctx.arc((p.x-ox)*k,(p.y-oy)*k,r,0,Math.PI*2);ctx.stroke();}
   ctx.restore();
 }
-function jpegB64(maxSide){
-  const W=S.img.w,H=S.img.h,s=Math.min(1,maxSide/Math.max(W,H));
-  const a=document.createElement('canvas');a.width=W;a.height=H;a.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.img.rgba),W,H),0,0);
-  const b=document.createElement('canvas');b.width=Math.round(W*s);b.height=Math.round(H*s);const g=b.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(a,0,0,b.width,b.height);
-  return{b64:b.toDataURL('image/jpeg',0.92).split(',')[1],s:b.width/W};
+// 讀原始照片（最高解析度），裁切時用；讀不到就用處理用的影像
+async function loadFull(){
+  if(S.full&&S.full.img===S.img)return S.full;
+  let src=null,f=1;
+  try{if(S.file){const url=URL.createObjectURL(S.file);try{src=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error('讀不到原圖'));im.src=url;});if(src.decode)await src.decode().catch(()=>{});}finally{setTimeout(()=>URL.revokeObjectURL(url),60000);}f=src.naturalWidth/S.img.w;}}
+  catch(e){console.warn('改用處理影像裁切',e);src=null;}
+  if(!src||!(f>0)){const a=document.createElement('canvas');a.width=S.img.w;a.height=S.img.h;a.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.img.rgba),S.img.w,S.img.h),0,0);src=a;f=1;}
+  S.full={img:S.img,src,f};return S.full;
 }
+// 裁一塊（S.img 座標），輸出長邊 outMax 的 JPEG；k = 輸出像素 / S.img 像素
+function cropB64(full,r,outMax){
+  const sw=r.w*full.f,sh=r.h*full.f,sc=Math.min(3,outMax/Math.max(sw,sh)),cw=Math.max(1,Math.round(sw*sc)),ch=Math.max(1,Math.round(sh*sc));
+  const c=document.createElement('canvas');c.width=cw;c.height=ch;const g=c.getContext('2d');g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+  g.drawImage(full.src,r.x*full.f,r.y*full.f,sw,sh,0,0,cw,ch);
+  return{b64:c.toDataURL('image/jpeg',0.92).split(',')[1],k:cw/r.w};
+}
+function pinLen(){return S.profile&&S.profile.L?S.profile.L:Math.sqrt(S.U||600)*2.2;}
+// 以中心為準擴成正方形（AI 會把照片壓成正方形，長條形會變形）
+function squareRect(x0,y0,x1,y1){
+  const W=S.img.w,H=S.img.h,side=Math.max(x1-x0,y1-y0),cx=(x0+x1)/2,cy=(y0+y1)/2;
+  const w=Math.min(W,Math.round(side)),h=Math.min(H,Math.round(side));
+  const x=Math.max(0,Math.min(W-w,Math.round(cx-w/2))),y=Math.max(0,Math.min(H-h,Math.round(cy-h/2)));return{x,y,w,h};
+}
+function aiRegion(){
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const c of S.comps.slice(1)){if(c.count<=0)continue;x0=Math.min(x0,c.x);y0=Math.min(y0,c.y);x1=Math.max(x1,c.x+c.w);y1=Math.max(y1,c.y+c.h);}
+  for(const p of S.manualParts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);}
+  if(!isFinite(x0))return{x:0,y:0,w:S.img.w,h:S.img.h};
+  const m=Math.round(Math.max(2*pinLen(),.04*Math.max(S.img.w,S.img.h)));
+  return squareRect(x0-m,y0-m,x1+m,y1+m);
+}
+// 區域太大（零件在 AI 眼中太小）就切 2×2，各塊重疊一點；每顆只算在中心所在的那一塊
+function aiTiles(r){
+  const L=pinLen(),maxSide=Math.max(300,L*1008/AI_PIN_PX),n=Math.min(2,Math.ceil(Math.max(r.w,r.h)/maxSide));
+  if(n<=1)return[{rect:r,core:r}];
+  const W=S.img.w,H=S.img.h,tw=r.w/n,th=r.h/n,m=Math.round(.75*L),out=[];
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){const core={x:r.x+i*tw,y:r.y+j*th,w:tw,h:th};
+    const x=Math.max(0,Math.floor(core.x-m)),y=Math.max(0,Math.floor(core.y-m)),x1=Math.min(W,Math.ceil(core.x+tw+m)),y1=Math.min(H,Math.ceil(core.y+th+m));
+    out.push({rect:{x,y,w:x1-x,h:y1-y},core});}
+  return out;
+}
+const inCore=(p,c)=>p.x>=c.x&&p.x<c.x+c.w&&p.y>=c.y&&p.y<c.y+c.h;
+// 送一張裁切圖給 AI，回傳解析後的 JSON
+async function aiCall(o,b64){
+  const payload={image:{type:'base64',value:b64},prompts:[{type:'text',text:o.prompt||'gold pin'}],output_prob_thresh:o.thr||0.5,format:'polygon'};
+  const {status,txt}=await rfCall(o,payload);let j=null;try{j=JSON.parse(txt);}catch(e){}
+  if(!(status>=200&&status<300)){const m=String((j&&(j.message||j.error||j.detail))||txt.slice(0,120));
+    throw new Error(status===401||status===403?'金鑰錯誤或沒有權限（'+status+'）':status===402||/credit|quota|limit/i.test(m)?'點數用完或超過用量（'+status+'）':'Roboflow 回應錯誤 '+status+'：'+m);}
+  if(!(j&&(j.prompt_results||j.predictions||Array.isArray(j))))throw new Error('看不懂 Roboflow 的回應格式');
+  return j;
+}
+// 把一堆放大單獨給 AI 看；結果取代這一堆原本的 AI 標記（放大後沒找到任何一顆就保留原結果）
+async function aiZoom(id,o,full){
+  const c=S.comps[id];if(!c)return false;const m=Math.max(15,Math.round(.6*pinLen()));
+  const r=squareRect(c.x-m,c.y-m,c.x+c.w+m,c.y+c.h+m),cr=cropB64(full,r,AI_ZOOM_OUT),j=await aiCall(o,cr.b64);
+  if(!S.ai||S.ai.img!==S.img)return false;S.ai.calls++;
+  const keep=aiParse(j,cr.k,r.x,r.y).pts.filter(p=>compNear(p.x,p.y)===id);
+  if(!keep.length)return false;
+  keep.forEach(p=>p.zoom=true);S.ai.pts=S.ai.pts.filter(p=>p.comp!==id).concat(keep);aiMap();return true;
+}
+function aiCheckSetup(){
+  const o=rfLoad();
+  if(!o.key&&!o.gas){$('advCard').open=true;$('rfGas').focus();toast('請先在「進階設定」填 GAS 網址或金鑰');return null;}
+  if(!o.ok){if(!confirm('這張照片會上傳到 Roboflow 做 AI 辨識。公司允許上傳嗎？（只問一次）'))return null;try{localStorage.setItem(RF_KEY,JSON.stringify({...o,ok:1}));}catch(e){}}
+  return o;
+}
+function aiErr(e){console.error(e);alert('AI 複查失敗：'+(e.name==='AbortError'?'等太久沒有回應，請檢查網路後再試':e.message||e)+(e instanceof TypeError?'\n（可能是網路不通，或 GAS 網址錯誤）':''));}
 async function rfPost(body,key,useQuery){
   const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),90000);
   try{const url=useQuery?RF_URL+'?api_key='+encodeURIComponent(key):RF_URL,h={'Content-Type':'application/json'};if(!useQuery)h.Authorization='Bearer '+key;
@@ -907,23 +974,28 @@ async function rfCall(o,payload){
   return{status:res.status,txt:await res.text()};
 }
 async function aiRun(){
-  if(!S.img||S.busy||S.aiBusy)return;const o=rfLoad();
-  if(!o.key&&!o.gas){$('advCard').open=true;$('rfGas').focus();toast('請先在「進階設定」填 GAS 網址或金鑰');return;}
-  if(!rfLoad().ok&&!confirm('這張照片會上傳到 Roboflow 做 AI 辨識。公司允許上傳嗎？（只問一次）'))return;
-  try{localStorage.setItem(RF_KEY,JSON.stringify({...o,ok:1}));}catch(e){}
+  if(!S.img||S.busy||S.aiBusy)return;const o=aiCheckSetup();if(!o)return;
   S.aiBusy=true;const btn=$('aiBtn');btn.disabled=true;btn.textContent='AI 辨識中…（約 5–30 秒）';const img=S.img,t0=performance.now();
   try{
-    const {b64,s}=jpegB64(RF_MAX);
-    const payload={image:{type:'base64',value:b64},prompts:[{type:'text',text:o.prompt||'gold pin'}],output_prob_thresh:o.thr||0.5,format:'polygon'};
-    const {status,txt}=await rfCall(o,payload);let j=null;try{j=JSON.parse(txt);}catch(e){}
-    if(!(status>=200&&status<300)){const m=String((j&&(j.message||j.error||j.detail))||txt.slice(0,120));
-      throw new Error(status===401||status===403?'金鑰錯誤或沒有權限（'+status+'）':status===402||/credit|quota|limit/i.test(m)?'點數用完或超過用量（'+status+'）':'Roboflow 回應錯誤 '+status+'：'+m);}
+    const full=await loadFull(),tiles=aiTiles(aiRegion());
+    const parts=await Promise.all(tiles.map(async t=>{const cr=cropB64(full,t.rect,AI_OUT),j=await aiCall(o,cr.b64);return aiParse(j,cr.k,t.rect.x,t.rect.y).pts.filter(p=>inCore(p,t.core));}));
     if(img!==S.img)return;   // 期間換了照片
-    const P=aiParse(j,s);if(!P.raw&&!(j&&(j.prompt_results||j.predictions)))throw new Error('看不懂 Roboflow 的回應格式');
-    S.ai={pts:P.pts,per:new Map(),outside:0,ms:performance.now()-t0,raw:j};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();render();
-    toast('AI 完成：'+P.pts.length+' 顆（'+(S.ai.ms/1000).toFixed(1)+' 秒）');
-  }catch(e){console.error(e);alert('AI 複查失敗：'+(e.name==='AbortError'?'等太久沒有回應，請檢查網路後再試':e.message||e)+(e instanceof TypeError?'\n（可能是網路不通，或 GAS 網址錯誤）':''));}
+    S.ai={img,pts:parts.flat(),per:new Map(),outside:0,calls:tiles.length};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();render();
+    // 第二步：和本頁數量不一致的地方，放大再看一次
+    const ids=aiDiffs().slice(0,AI_ZOOM_MAX);
+    if(ids.length){btn.textContent='放大確認 '+ids.length+' 處…';
+      const rs=await Promise.allSettled(ids.map(id=>aiZoom(id,o,full)));if(img!==S.img)return;
+      rs.forEach(r=>{if(r.status==='rejected')console.warn('放大確認失敗',r.reason);});}
+    render();if(S.selected)fillSheet();
+    toast('AI 完成：'+S.ai.pts.length+' 顆（'+((performance.now()-t0)/1000).toFixed(1)+' 秒）');
+  }catch(e){aiErr(e);}
   finally{S.aiBusy=false;btn.disabled=false;btn.textContent='AI 複查（SAM 3）';}
+}
+async function aiZoomOne(){
+  const c=S.comps[S.selected];if(!c||!S.ai||S.aiBusy||S.busy)return;const o=aiCheckSetup();if(!o)return;
+  S.aiBusy=true;const b=$('aiZoomBtn');b.disabled=true;b.textContent='AI 放大看中…';
+  try{const ok=await aiZoom(c.id,o,await loadFull());render();fillSheet();toast(ok?'放大確認完成':'放大後 AI 沒找到零件，保留原結果');}
+  catch(e){aiErr(e);}finally{S.aiBusy=false;b.disabled=false;b.textContent='AI 放大重數這堆';}
 }
 
 /* ===== 小提示 ===== */
@@ -947,6 +1019,7 @@ $('aiApplyBtn').onclick=()=>{if(!S.ai)return;const ids=aiDiffs().filter(id=>S.co
   if(!ids.length){toast('沒有需要改的堆');return;}
   if(!confirm('把 '+ids.length+' 堆改成 AI 的數量？（單顆和 AI 沒找到的不改；可按「復原上一步」）'))return;
   pushUndo();invalidate();ids.forEach(id=>S.overrides.set(id,S.ai.per.get(id)));classify();render();if(S.selected)fillSheet();toast('已採用 '+ids.length+' 堆');};
+$('aiZoomBtn').onclick=aiZoomOne;
 $('aiUseBtn').onclick=()=>{const c=S.comps[S.selected];if(c&&S.ai)setOverride(c.id,S.ai.per.get(c.id)||0);};
 rfShow();
 $('camInput').addEventListener('change',onFilePicked);$('fileInput').addEventListener('change',onFilePicked);
@@ -1004,7 +1077,7 @@ $('addBtn').onclick=()=>{
 };
 $('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
 $('truth').oninput=updateTest;
-$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.5',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.6',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
 $('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
