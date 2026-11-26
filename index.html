@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.6</title>
+<title>零件拍照計數 V3.7</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -80,7 +80,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.6</h1>
+  <h1>零件拍照計數 V3.7</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -780,7 +780,8 @@ function fillSheet() {
   $('refBtn').disabled = c.area < minArea() || (S.ignoreBorder&&c.border);
   const an=S.ai?(S.ai.per.get(c.id)||0):null;
   $('sheetAi').hidden=an===null;$('aiUseBtn').hidden=an===null||an===c.count;$('aiZoomBtn').hidden=an===null||S.aiBusy;
-  if(an!==null){const z=S.ai.zoomIds&&S.ai.zoomIds.has(c.id);$('sheetAi').textContent=(z?'AI（放大確認）認為這塊有 ':'AI 認為這塊有 ')+an+' 顆'+(an===c.count?'（和目前一樣）':'（目前 '+c.count+' 顆）');$('aiUseBtn').textContent='用 AI 數量（'+an+'）';}
+  if(an!==null){const z=S.ai.zoomIds&&S.ai.zoomIds.has(c.id),f1=S.ai.first?S.ai.first.get(c.id)||0:an,mg=S.ai.merged.get(c.id)||0;
+    $('sheetAi').textContent=(z?'AI（放大確認）認為這塊有 ':'AI 認為這塊有 ')+an+' 顆'+(an===c.count?'（和目前一樣）':'（目前 '+c.count+' 顆）')+(z&&f1!==an?'；第一次看是 '+f1+' 顆，兩次不同，請自己數':'')+(mg?'；已合併 '+mg+' 個重複／斷段':'');$('aiUseBtn').textContent='用 AI 數量（'+an+'）';}
 }
 function setOverride(id, n) {
   pushUndo();invalidate();S.overrides.set(id, Math.max(0, Math.trunc(n))); classify(); render(); fillSheet();
@@ -859,9 +860,56 @@ function compNear(x0,y0){
   for(let dy=-R;dy<=R&&bd>0;dy++)for(let dx=-R;dx<=R;dx++){const x=px+dx,y=py+dy;if(x<0||y<0||x>=W||y>=H)continue;const l=L[y*W+x];if(l){const d=dx*dx+dy*dy;if(d<bd){bd=d;id=l;}}}
   return id;
 }
+// 每個 AI 實例的形狀：用最大的那塊輪廓算長、寬、方向
+function polyArea(P){let a=0;for(let i=0,j=P.length-1;i<P.length;j=i++)a+=P[j][0]*P[i][1]-P[i][0]*P[j][1];return Math.abs(a/2);}
+function aiGeom(p){
+  if(!p.polys||!p.polys.length)return null;
+  let P=p.polys[0],best=-1;p.polys.forEach(Q=>{const a=polyArea(Q);if(a>best){best=a;P=Q;}});
+  const pts=[];for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])));for(let t=0;t<n;t++)pts.push([a[0]+(b[0]-a[0])*t/n,a[1]+(b[1]-a[1])*t/n]);}
+  let mx=0,my=0;pts.forEach(q=>{mx+=q[0];my+=q[1];});mx/=pts.length;my/=pts.length;
+  let sxx=0,syy=0,sxy=0;pts.forEach(q=>{const dx=q[0]-mx,dy=q[1]-my;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy;});
+  const ang=.5*Math.atan2(2*sxy,sxx-syy),ux=Math.cos(ang),uy=Math.sin(ang);
+  let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9;pts.forEach(q=>{const dx=q[0]-mx,dy=q[1]-my,u=dx*ux+dy*uy,v=-dx*uy+dy*ux;a0=Math.min(a0,u);a1=Math.max(a1,u);b0=Math.min(b0,v);b1=Math.max(b1,v);});
+  return{cx:mx+ux*(a0+a1)/2,cy:my+uy*(a0+a1)/2,ux,uy,len:a1-a0,wid:b1-b0,area:best};
+}
+const inPoly=(x,y,P)=>{let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],b=P[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;};
+// 兩個實例的輪廓重疊多少（以小的那個為準）
+function aiOverlap(a,b,step){
+  const box=p=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;p.polys.forEach(P=>P.forEach(q=>{x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1]);}));return[x0,y0,x1,y1];};
+  const A=box(a),B=box(b),x0=Math.max(A[0],B[0]),y0=Math.max(A[1],B[1]),x1=Math.min(A[2],B[2]),y1=Math.min(A[3],B[3]);if(x0>=x1||y0>=y1)return 0;
+  const inA=(x,y)=>a.polys.some(P=>inPoly(x,y,P)),inB=(x,y)=>b.polys.some(P=>inPoly(x,y,P));let both=0;
+  for(let y=y0+step/2;y<y1;y+=step)for(let x=x0+step/2;x<x1;x+=step)if(inA(x,y)&&inB(x,y))both++;
+  const sa=a.polys.reduce((t,P)=>t+polyArea(P),0),sb=b.polys.reduce((t,P)=>t+polyArea(P),0);
+  return both*step*step/Math.max(1,Math.min(sa,sb));
+}
+// AI 偶爾把同一根算兩次（輪廓幾乎重疊），或被別根壓住時斷成兩段（兩段短、同一直線）。這兩種只算一次。
+function aiClean(pts){
+  pts.forEach(p=>{p.dup=null;});
+  const G=pts.filter(p=>p.g);if(G.length<2)return;
+  const med=a=>{const b=a.slice().sort((x,y)=>x-y);return b[b.length>>1];};
+  const Lm=G.length>=5?med(G.map(p=>p.g.len)):pinLen(),Wm=G.length>=5?med(G.map(p=>p.g.wid)):(S.profile?S.profile.W:Lm/6),step=Math.max(1,Wm/5);
+  const byConf=G.slice().sort((a,b)=>b.conf-a.conf||b.g.area-a.g.area);
+  for(let i=0;i<byConf.length;i++){const a=byConf[i];if(a.dup)continue;
+    for(let j=i+1;j<byConf.length;j++){const b=byConf[j];if(b.dup||b.comp!==a.comp)continue;
+      if(Math.hypot(a.g.cx-b.g.cx,a.g.cy-b.g.cy)>Lm)continue;
+      if(aiOverlap(a,b,step)>=.5)b.dup='dup';}}
+  // 斷段：兩段都比一根短（較短那段不到 0.7 根、較長那段不到 0.95 根），在同一直線上，加起來約一根長
+  const part=G.filter(p=>!p.dup&&p.g.len<.95*Lm).sort((a,b)=>b.g.len-a.g.len);
+  for(let i=0;i<part.length;i++){const a=part[i];if(a.dup)continue;
+    for(let j=i+1;j<part.length;j++){const b=part[j];if(b.dup||b.comp!==a.comp||b.g.len>=.7*Lm)continue;
+      const cos=Math.abs(a.g.ux*b.g.ux+a.g.uy*b.g.uy);if(b.g.len>=2*b.g.wid&&cos<Math.cos(12*Math.PI/180))continue;   // 很小的碎片方向不準，只看是否在長段的延長線上
+      const dx=b.g.cx-a.g.cx,dy=b.g.cy-a.g.cy,along=dx*a.g.ux+dy*a.g.uy,perp=Math.abs(-dx*a.g.uy+dy*a.g.ux);
+      const span=Math.abs(along)+(a.g.len+b.g.len)/2,gap=Math.abs(along)-(a.g.len+b.g.len)/2;
+      if(perp<.6*Wm&&span<=1.2*Lm&&gap<=.5*Lm){b.dup='frag';break;}}}
+}
 function aiMap(){
-  const A=S.ai;if(!A||!S.labels)return;A.per=new Map();A.outside=0;A.zoomIds=new Set();
-  for(const p of A.pts){const id=compNear(p.x,p.y);p.comp=id;
+  const A=S.ai;if(!A||!S.labels)return;
+  for(const p of A.pts){p.comp=compNear(p.x,p.y);if(p.g===undefined)p.g=aiGeom(p);}
+  aiClean(A.pts);
+  A.per=new Map();A.outside=0;A.zoomIds=new Set();A.merged=new Map();A.n=0;
+  for(const p of A.pts){const id=p.comp;
+    if(p.dup){if(id)A.merged.set(id,(A.merged.get(id)||0)+1);continue;}
+    A.n++;
     if(id&&!(S.ignoreBorder&&S.comps[id]&&S.comps[id].border)){A.per.set(id,(A.per.get(id)||0)+1);if(p.zoom)A.zoomIds.add(id);}else A.outside++;}
 }
 function aiDiffs(){
@@ -873,19 +921,27 @@ function aiUI(){
   const A=S.ai,has=!!(A&&S.img);$('aiOut').hidden=!has;$('aiActs').hidden=!has;$('aiDotsBtn').hidden=!has;
   if(!has)return;
   const d=aiDiffs(),pileD=d.filter(id=>S.comps[id].cls!=='single'||(A.per.get(id)||0)>1);
-  let t='AI 找到 <b>'+A.pts.length+'</b> 顆；本頁目前 <b>'+S.total+'</b> 顆。'+(A.calls?'<span class="muted">（AI 看了 '+A.calls+' 次'+(A.zoomIds&&A.zoomIds.size?'，其中 '+A.zoomIds.size+' 堆放大確認':'')+'）</span>':'');
-  if(!d.length&&!A.outside)t+='<br>每一塊的數量都一致 ✓';
+  let t='AI 找到 <b>'+A.n+'</b> 顆；本頁目前 <b>'+S.total+'</b> 顆。'+(A.calls?'<span class="muted">（AI 看了 '+A.calls+' 次'+(A.zoomIds&&A.zoomIds.size?'，其中 '+A.zoomIds.size+' 堆放大確認':'')+'）</span>':'');
+  const twice=[...(A.zoomIds||[])].filter(id=>A.first&&A.first.has(id)&&A.first.get(id)!==A.per.get(id)).length,mg=[...A.merged.values()].reduce((a,b)=>a+b,0);
+  const big=S.comps.slice(1).filter(c=>c.count>=10).length;
+  if(!d.length&&!A.outside)t+='<br>每一塊的數量都一致'+(big?'。但 10 顆以上的大堆，兩種方法可能同時算錯，請點開放大圖確認或撥開再拍。':' ✓');
   else{t+='<br>'+d.length+' 塊數量不同'+(A.outside?'；另有 '+A.outside+' 顆 AI 標記不在任何一塊上（可能是漏判，可用「補入漏判」）':'')+'。';}
+  if(twice)t+='<br>'+twice+' 堆 AI 第一次和放大後數量不同，請點開自己確認。';
+  if(mg)t+='<br><span class="muted">已合併 '+mg+' 個重複或斷成兩段的 AI 標記（虛線，不計數）。</span>';
   t+='<br><span class="muted">紫色圈是 AI 找到的零件。AI 也會錯，請看過再採用；不會自動改數字。</span>';
   $('aiOut').innerHTML=t;$('aiNextBtn').disabled=!d.length;$('aiApplyBtn').disabled=!pileD.some(id=>S.comps[id].cls!=='single');
 }
 function aiDraw(ctx,ox,oy,k,r,onlyId){
-  ctx.save();ctx.lineWidth=Math.max(1.5,r*.35);ctx.strokeStyle='#a855f7';
+  ctx.save();ctx.lineWidth=Math.max(1.5,r*.35);let n=0;const fs=Math.max(10,Math.round(r*1.6));
   for(const p of S.ai.pts){if(onlyId&&p.comp!==onlyId)continue;
+    ctx.strokeStyle=p.dup?'#6b7280':'#a855f7';ctx.setLineDash(p.dup?[4,3]:[]);
     if(onlyId&&p.polys.length){p.polys.forEach(P=>{ctx.beginPath();P.forEach((q,i)=>{const X=(q[0]-ox)*k,Y=(q[1]-oy)*k;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.closePath();ctx.stroke();});}
-    ctx.beginPath();ctx.arc((p.x-ox)*k,(p.y-oy)*k,r,0,Math.PI*2);ctx.stroke();}
+    const X=(p.x-ox)*k,Y=(p.y-oy)*k;ctx.beginPath();ctx.arc(X,Y,r,0,Math.PI*2);ctx.stroke();
+    if(onlyId){ctx.setLineDash([]);const t=p.dup?'×':String(++n);ctx.font='bold '+fs+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.lineWidth=3;ctx.strokeStyle='#fff';ctx.strokeText(t,X+r+fs*.45,Y-r);ctx.fillStyle=p.dup?'#6b7280':'#7e22ce';ctx.fillText(t,X+r+fs*.45,Y-r);ctx.lineWidth=Math.max(1.5,r*.35);}}
   ctx.restore();
 }
+
 // 讀原始照片（最高解析度），裁切時用；讀不到就用處理用的影像
 async function loadFull(){
   if(S.full&&S.full.img===S.img)return S.full;
@@ -980,14 +1036,14 @@ async function aiRun(){
     const full=await loadFull(),tiles=aiTiles(aiRegion());
     const parts=await Promise.all(tiles.map(async t=>{const cr=cropB64(full,t.rect,AI_OUT),j=await aiCall(o,cr.b64);return aiParse(j,cr.k,t.rect.x,t.rect.y).pts.filter(p=>inCore(p,t.core));}));
     if(img!==S.img)return;   // 期間換了照片
-    S.ai={img,pts:parts.flat(),per:new Map(),outside:0,calls:tiles.length};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();render();
+    S.ai={img,pts:parts.flat(),per:new Map(),outside:0,calls:tiles.length};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();S.ai.first=new Map(S.ai.per);render();
     // 第二步：和本頁數量不一致的地方，放大再看一次
     const ids=aiDiffs().slice(0,AI_ZOOM_MAX);
     if(ids.length){btn.textContent='放大確認 '+ids.length+' 處…';
       const rs=await Promise.allSettled(ids.map(id=>aiZoom(id,o,full)));if(img!==S.img)return;
       rs.forEach(r=>{if(r.status==='rejected')console.warn('放大確認失敗',r.reason);});}
     render();if(S.selected)fillSheet();
-    toast('AI 完成：'+S.ai.pts.length+' 顆（'+((performance.now()-t0)/1000).toFixed(1)+' 秒）');
+    toast('AI 完成：'+S.ai.n+' 顆（'+((performance.now()-t0)/1000).toFixed(1)+' 秒）');
   }catch(e){aiErr(e);}
   finally{S.aiBusy=false;btn.disabled=false;btn.textContent='AI 複查（SAM 3）';}
 }
@@ -1077,7 +1133,7 @@ $('addBtn').onclick=()=>{
 };
 $('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
 $('truth').oninput=updateTest;
-$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.6',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.7',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
 $('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
