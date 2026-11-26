@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.4</title>
+<title>零件拍照計數 V3.5</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -80,7 +80,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.4</h1>
+  <h1>零件拍照計數 V3.5</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -167,6 +167,9 @@
       <select id="resSel"><option value="2000" selected>標準（建議）</option><option value="3000">高（零件很小時用，比較慢）</option></select></div>
     <div class="field" style="display:block;border-top:1px solid #e5e7eb;padding-top:8px">
       <b>AI 複查設定（Roboflow SAM 3）</b> <span id="rfState" class="muted"></span>
+      <div class="field"><label for="rfGas">GAS 網址</label><input id="rfGas" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" style="flex:1;min-width:0"></div>
+      <div class="field"><label for="rfPass">GAS 密碼</label><input id="rfPass" type="password" autocomplete="off" placeholder="GAS 有設密碼才填" style="flex:1;min-width:0"></div>
+      <div class="muted">有填 GAS 網址就走 GAS（金鑰放在 GAS，下面的金鑰可以空白）；沒填才由手機直接連 Roboflow。</div>
       <div class="field"><label for="rfKey">API 金鑰</label><input id="rfKey" type="password" autocomplete="off" spellcheck="false" placeholder="貼上 Private API Key" style="flex:1;min-width:0"></div>
       <div class="field"><label for="rfPrompt">要找的東西</label><input id="rfPrompt" value="gold pin" style="flex:1;min-width:0"></div>
       <div class="field"><label for="rfThr">信心門檻</label><input id="rfThr" type="number" min="0.1" max="0.95" step="0.05" value="0.5" inputmode="decimal"></div>
@@ -811,9 +814,10 @@ function downloadBlob(blob,name){const a=document.createElement('a'),url=URL.cre
 // 金鑰只存在這支手機的 localStorage，不寫進程式碼。
 const RF_KEY='partcount.rf.v1', RF_URL='https://serverless.roboflow.com/sam3/concept_segment', RF_MAX=1600;
 function rfLoad(){try{const o=JSON.parse(localStorage.getItem(RF_KEY)||'{}');return o&&typeof o==='object'?o:{};}catch(e){return {};}}
-function rfShow(){const o=rfLoad();$('rfKey').value=o.key||'';$('rfPrompt').value=o.prompt||'gold pin';$('rfThr').value=o.thr||0.5;$('rfState').textContent=o.key?'（已設定金鑰）':'（尚未設定金鑰）';}
-function rfSave(){const key=$('rfKey').value.trim(),prompt=$('rfPrompt').value.trim()||'gold pin';let thr=Number($('rfThr').value);if(!(thr>0&&thr<1))thr=0.5;
-  try{localStorage.setItem(RF_KEY,JSON.stringify({key,prompt,thr}));toast(key?'已存在這支手機':'已儲存（沒有金鑰）');}catch(e){toast('儲存失敗：瀏覽器儲存空間不可用');}rfShow();}
+function rfShow(){const o=rfLoad();$('rfKey').value=o.key||'';$('rfGas').value=o.gas||'';$('rfPass').value=o.pass||'';$('rfPrompt').value=o.prompt||'gold pin';$('rfThr').value=o.thr||0.5;$('rfState').textContent=o.gas?'（走 GAS）':o.key?'（手機直接連線）':'（尚未設定）';}
+function rfSave(){const gas=$('rfGas').value.trim(),pass=$('rfPass').value,key=$('rfKey').value.trim(),prompt=$('rfPrompt').value.trim()||'gold pin';let thr=Number($('rfThr').value);if(!(thr>0&&thr<1))thr=0.5;
+  try{if(gas&&!/^https:\/\/script\.google(usercontent)?\.com\//.test(gas)){toast('GAS 網址格式不對');return;}
+  const ok=rfLoad().ok;localStorage.setItem(RF_KEY,JSON.stringify({gas,pass,key,prompt,thr,ok}));toast(gas||key?'已存在這支手機':'已儲存（沒有金鑰）');}catch(e){toast('儲存失敗：瀏覽器儲存空間不可用');}rfShow();}
 // 把各種可能的多邊形格式轉成 [[x,y],...]
 function normPoly(a){
   if(!Array.isArray(a)||!a.length)return null;
@@ -887,24 +891,38 @@ async function rfPost(body,key,useQuery){
   try{const url=useQuery?RF_URL+'?api_key='+encodeURIComponent(key):RF_URL,h={'Content-Type':'application/json'};if(!useQuery)h.Authorization='Bearer '+key;
     return await fetch(url,{method:'POST',headers:h,body,signal:ctl.signal});}finally{clearTimeout(tm);}
 }
+// 透過 GAS 轉送（GAS 在伺服器端呼叫 Roboflow，不受瀏覽器跨網域限制）
+async function rfCall(o,payload){
+  if(o.gas){
+    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),120000);let res;
+    try{res=await fetch(o.gas,{method:'POST',body:JSON.stringify({pass:o.pass||'',body:payload}),signal:ctl.signal});}finally{clearTimeout(tm);}
+    const w=await res.json().catch(()=>null);
+    if(!w)throw new Error('GAS 沒有回傳資料（請確認部署時「誰可以存取」選「所有人」）');
+    if(w.error)throw new Error('GAS：'+w.error);
+    return{status:w.status,txt:w.text||''};
+  }
+  const body=JSON.stringify(payload);let res;
+  try{res=await rfPost(body,o.key,false);}catch(e){if(e.name==='AbortError')throw e;
+    try{res=await rfPost(body,o.key,true);}catch(e2){if(e2.name==='AbortError')throw e2;throw new Error('手機無法直接連到 Roboflow（被瀏覽器擋下）。請改用 GAS 轉送：在「進階設定」填 GAS 網址。');}}
+  return{status:res.status,txt:await res.text()};
+}
 async function aiRun(){
   if(!S.img||S.busy||S.aiBusy)return;const o=rfLoad();
-  if(!o.key){$('advCard').open=true;$('rfKey').focus();toast('請先在「進階設定」貼上 Roboflow 金鑰');return;}
+  if(!o.key&&!o.gas){$('advCard').open=true;$('rfGas').focus();toast('請先在「進階設定」填 GAS 網址或金鑰');return;}
   if(!rfLoad().ok&&!confirm('這張照片會上傳到 Roboflow 做 AI 辨識。公司允許上傳嗎？（只問一次）'))return;
   try{localStorage.setItem(RF_KEY,JSON.stringify({...o,ok:1}));}catch(e){}
   S.aiBusy=true;const btn=$('aiBtn');btn.disabled=true;btn.textContent='AI 辨識中…（約 5–30 秒）';const img=S.img,t0=performance.now();
   try{
     const {b64,s}=jpegB64(RF_MAX);
-    const body=JSON.stringify({image:{type:'base64',value:b64},prompts:[{type:'text',text:o.prompt||'gold pin'}],output_prob_thresh:o.thr||0.5,format:'polygon'});
-    let res;try{res=await rfPost(body,o.key,false);}catch(e){if(e.name==='AbortError')throw e;res=await rfPost(body,o.key,true);}   // 標頭被擋時改用網址帶金鑰
-    const txt=await res.text();let j=null;try{j=JSON.parse(txt);}catch(e){}
-    if(!res.ok){const m=(j&&(j.message||j.error||j.detail))||txt.slice(0,120);
-      throw new Error(res.status===401||res.status===403?'金鑰錯誤或沒有權限（'+res.status+'）':res.status===402||/credit|quota|limit/i.test(m)?'點數用完或超過用量（'+res.status+'）':'Roboflow 回應錯誤 '+res.status+'：'+m);}
+    const payload={image:{type:'base64',value:b64},prompts:[{type:'text',text:o.prompt||'gold pin'}],output_prob_thresh:o.thr||0.5,format:'polygon'};
+    const {status,txt}=await rfCall(o,payload);let j=null;try{j=JSON.parse(txt);}catch(e){}
+    if(!(status>=200&&status<300)){const m=String((j&&(j.message||j.error||j.detail))||txt.slice(0,120));
+      throw new Error(status===401||status===403?'金鑰錯誤或沒有權限（'+status+'）':status===402||/credit|quota|limit/i.test(m)?'點數用完或超過用量（'+status+'）':'Roboflow 回應錯誤 '+status+'：'+m);}
     if(img!==S.img)return;   // 期間換了照片
     const P=aiParse(j,s);if(!P.raw&&!(j&&(j.prompt_results||j.predictions)))throw new Error('看不懂 Roboflow 的回應格式');
     S.ai={pts:P.pts,per:new Map(),outside:0,ms:performance.now()-t0,raw:j};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();render();
     toast('AI 完成：'+P.pts.length+' 顆（'+(S.ai.ms/1000).toFixed(1)+' 秒）');
-  }catch(e){console.error(e);alert('AI 複查失敗：'+(e.name==='AbortError'?'等太久沒有回應，請檢查網路後再試':e.message||e)+(e instanceof TypeError?'\n（可能是網路不通，或瀏覽器擋下連線）':''));}
+  }catch(e){console.error(e);alert('AI 複查失敗：'+(e.name==='AbortError'?'等太久沒有回應，請檢查網路後再試':e.message||e)+(e instanceof TypeError?'\n（可能是網路不通，或 GAS 網址錯誤）':''));}
   finally{S.aiBusy=false;btn.disabled=false;btn.textContent='AI 複查（SAM 3）';}
 }
 
@@ -986,7 +1004,7 @@ $('addBtn').onclick=()=>{
 };
 $('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
 $('truth').oninput=updateTest;
-$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.4',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.5',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
 $('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
