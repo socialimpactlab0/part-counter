@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>零件拍照計數 V3.7</title>
+<title>零件拍照計數 V3.7.1</title>
 <style>
   :root {
     --bg: #f3f4f6; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
@@ -80,7 +80,7 @@
 </head>
 <body>
 <header>
-  <h1>零件拍照計數 V3.7</h1>
+  <h1>零件拍照計數 V3.7.1</h1>
   <p class="sub">拍一張照片，自動數零件。照片只在瀏覽器內運算，不會上傳。辨識結果須覆核。</p>
 </header>
 
@@ -125,7 +125,7 @@
       <div class="btnrow" id="aiActs" hidden><button id="aiNextBtn" class="btn small">下一個差異處</button><button id="aiApplyBtn" class="btn small">所有黏在一起的堆採用 AI 數量</button></div>
     </div>
     <div class="btnrow"><button id="reviewBtn" class="btn">確認已人工覆核整張照片</button></div>
-    <details style="margin-top:10px"><summary>測試紀錄（已知實際數量）</summary>
+    <details style="margin-top:10px"><summary><b>測試紀錄</b>（已知實際數量時，點這裡展開填寫）</summary>
       <div class="field"><label for="truth">實際數量</label><input id="truth" type="number" min="0" step="1" inputmode="numeric"> PCS</div>
       <div id="testOut" class="calc-out">輸入實際清點數量，即可比較誤差。</div>
       <div class="btnrow"><button id="testSave" class="btn small">保存本次測試</button><button id="testExport" class="btn small">下載測試 CSV</button></div>
@@ -806,7 +806,7 @@ function calc(){
   if(st<0||bt<0||!Number.isInteger(n)||n<=0||sw<=0||($('cBagW').value!==''&&bw<=0)){out.textContent='請輸入正整數樣本數量及有效重量；皮重不可為負，淨重須大於零。';return;}
   const unit=sw/n;out.innerHTML='單重：<b>'+unit.toPrecision(5)+'</b> g／PCS'+($('cBagW').value!==''?'<br>整袋估算：<b style="font-size:22px">'+Math.round(bw/unit).toLocaleString()+'</b> PCS':'')+(S.calcUnreviewed?'<br><span class="est-text">⚠ 樣本數量尚未人工覆核，整袋換算可能放大誤差。</span>':'');
 }
-function updateTest(){const v=$('truth').value,n=Number(v);$('testOut').textContent=v!==''&&Number.isInteger(n)&&n>=0?'自動 '+S.initialTotal+' PCS；目前 '+S.total+' PCS；實際 '+n+' PCS；差值 '+(S.total-n)+' PCS'+(n>0?'；絕對數量誤差率 '+(Math.abs(S.total-n)/n*100).toFixed(2)+'%':''):'輸入實際清點數量，即可比較誤差。';}
+function updateTest(){const v=$('truth').value,n=Number(v);$('testOut').textContent=v!==''&&Number.isInteger(n)&&n>=0?'自動 '+S.initialTotal+' PCS；目前 '+S.total+' PCS；'+(S.ai?'AI '+S.ai.n+' PCS；':'')+'實際 '+n+' PCS；差值 '+(S.total-n)+' PCS'+(n>0?'；絕對數量誤差率 '+(Math.abs(S.total-n)/n*100).toFixed(2)+'%':''):'輸入實際清點數量，即可比較誤差。';}
 function loadTests(){try{const a=JSON.parse(localStorage.getItem(TEST_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}}
 function downloadBlob(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 
@@ -1036,7 +1036,7 @@ async function aiRun(){
     const full=await loadFull(),tiles=aiTiles(aiRegion());
     const parts=await Promise.all(tiles.map(async t=>{const cr=cropB64(full,t.rect,AI_OUT),j=await aiCall(o,cr.b64);return aiParse(j,cr.k,t.rect.x,t.rect.y).pts.filter(p=>inCore(p,t.core));}));
     if(img!==S.img)return;   // 期間換了照片
-    S.ai={img,pts:parts.flat(),per:new Map(),outside:0,calls:tiles.length};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();S.ai.first=new Map(S.ai.per);render();
+    S.ai={img,pts:parts.flat(),per:new Map(),outside:0,calls:tiles.length};S.aiShow=true;$('aiDotsBtn').textContent='隱藏 AI 標記';aiMap();S.ai.first=new Map(S.ai.per);S.ai.firstN=S.ai.n;render();
     // 第二步：和本頁數量不一致的地方，放大再看一次
     const ids=aiDiffs().slice(0,AI_ZOOM_MAX);
     if(ids.length){btn.textContent='放大確認 '+ids.length+' 處…';
@@ -1133,8 +1133,8 @@ $('addBtn').onclick=()=>{
 };
 $('accClear').onclick=()=>{if(!S.acc.length||!confirm('確定清除全部累計？'))return;S.acc=[];saveAcc();renderAcc();if(S.img)updateSummary();};
 $('truth').oninput=updateTest;
-$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.7',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
-$('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
+$('testSave').onclick=()=>{const v=$('truth').value,n=Number(v);if(!S.img||v===''||!Number.isInteger(n)||n<0){toast('請先輸入實際清點數量');return;}S.tests.push({version:'3.7.1',time:new Date().toISOString(),photo:S.photoId,mode:(S.mode==='auto'?'auto-':'')+S.useMode,threshold:S.T,width:S.img.w,height:S.img.h,actual:n,automatic:S.initialTotal,final:S.total,delta:S.total-n,error:n?Math.abs(S.total-n)/n*100:null,reviewed:S.reviewed,seconds:S.elapsed,ai:S.ai?S.ai.n:'',ai_first:S.ai?S.ai.firstN:'',ai_merged:S.ai?[...S.ai.merged.values()].reduce((a,b)=>a+b,0):'',ai_calls:S.ai?S.ai.calls:'',ai_delta:S.ai?S.ai.n-n:''});try{localStorage.setItem(TEST_KEY,JSON.stringify(S.tests));toast('已保存測試紀錄');}catch(e){toast('本機儲存失敗，請下載 CSV 保留紀錄');}};
+$('testExport').onclick=()=>{const keys=['version','time','photo','mode','threshold','width','height','actual','automatic','final','delta','error','reviewed','seconds','ai','ai_delta','ai_first','ai_merged','ai_calls'];const csv=[keys.join(','),...S.tests.map(a=>keys.map(k=>'"'+String(a[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'零件計數測試.csv');};
 $('saveBtn').onclick = () => {
   if (!S.img) return;
   // 下載的圖：上方加一條白色標題（總數、時間），下面是標示圖
